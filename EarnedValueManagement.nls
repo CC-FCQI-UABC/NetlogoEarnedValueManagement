@@ -1,0 +1,142 @@
+to-report BAC
+  let budget-at-completion 0
+  foreach sort tasks [
+    the-task -> ask the-task [
+      set budget-at-completion budget-at-completion + planned-hours;
+    ]
+  ]
+  report budget-at-completion
+end
+
+;to-report PV
+;  let planned-value 0
+;  foreach sort tasks with [status = "done" or status = "in-progress" or status = "to-do"][
+;    the-task -> ask the-task [
+;        set planned-value planned-value + planned-hours;
+;    ]
+;  ]
+;  report planned-value
+;end
+
+to-report PV
+  let planned-value 0
+  foreach sort tasks [
+    the-task -> ask the-task [
+        set planned-value planned-value + planned-hours;
+    ]
+  ]
+  report planned-value
+end
+
+to-report PV2
+  let planned-value 0
+  foreach sort tasks with [status = "done" or status = "in-progress"][
+    the-task -> ask the-task [
+        set planned-value planned-value + planned-hours;
+    ]
+  ]
+  report planned-value
+end
+
+to-report AC
+  let actual-cost 0
+  foreach sort tasks with [status = "done" or status = "in-progress"][
+    the-task -> ask the-task [
+      set actual-cost actual-cost + actual-hours;
+    ]
+  ]
+  report actual-cost
+end
+
+to-report EV
+  let earned-value 0
+  foreach sort tasks with [status = "done" or status = "in-progress"][
+    the-task -> ask the-task [
+        set earned-value earned-value + complete-hours ;
+    ]
+  ]
+  report earned-value
+end
+
+to-report PV%
+  ifelse BAC > 0 [report (PV / BAC)][report 1]
+end
+
+to-report PV2%
+  ifelse BAC > 0 [report (PV2 / BAC)][report 1]
+end
+
+to-report EV%
+  ifelse BAC > 0 [report (EV / BAC)][report 1]
+end
+
+to-report AC%
+  ifelse BAC > 0 [report (AC / BAC)][report 1]
+end
+
+to-report SV
+  report EV - PV
+end
+
+to-report CV
+  report EV - AC
+end
+
+to-report SV%
+  ifelse PV > 0 [report SV / PV][report 1]
+end
+
+to-report CV%
+  ifelse EV > 0 [report CV / EV][report 1]
+end
+
+to-report SPI
+  ifelse PV > 0 [report EV / PV][report 1]
+end
+
+to-report CPI
+  ifelse AC > 0 [report EV / AC][report 1]
+end
+
+to-report TCPI
+  ifelse (BAC - AC) > 0 [report (BAC - EV) / (BAC - AC)][report 1]
+end
+
+
+to-report EAC1
+  report BAC + SV
+end
+
+to-report EAC2
+  ifelse CPI > 0 [report BAC / CPI][report 1]
+end
+
+
+to-report ETC
+  report EAC1 - AC
+end
+
+to-report ETC2
+  report EAC1 - AC
+end
+
+
+to-report VAC
+  report BAC - EAC1
+end
+
+to-report VAC%
+  ifelse BAC > 0 [report VAC / BAC][report 1]
+end
+
+to-report CPIAC
+  ifelse EAC1 > 0 [report BAC / EAC1][report 1]
+end
+
+to-report EACt
+  ifelse SPI > 0 and PMB-Duration > 0 and BAC > 0 [report (BAC / SPI) / (BAC / PMB-Duration)][report 1]
+end
+
+to-report PMB-Duration
+  ifelse count employees > 0 [report BAC / count employees][report 1]
+end
