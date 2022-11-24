@@ -56,7 +56,7 @@ to read-csv
 
   file-open csv-file ; open the file with the tasks data
 
-  if csv-file = "Sip-task-info.csv" [
+  if csv-file = "input/Sip-task-info.csv" [
     ; We'll read all the data in a single loop
     while [ not file-at-end? ] [
       ; here the CSV extension grabs a single line and puts the read data in a list
@@ -82,7 +82,7 @@ to read-csv
     ]
   ]
 
-    if csv-file = "Software-Development-Plan.csv" [
+    if csv-file = "input/Software-Development-Plan.csv" [
     ; We'll read all the data in a single loop
     while [ not file-at-end? ] [
       ; here the CSV extension grabs a single line and puts the read data in a list
@@ -226,14 +226,14 @@ to write-tasks-to-csv
   ; we use the `of` primitive to make a list of lists and then
   ; use the csv extension to write that list of lists to a file.
   ; csv:to-file "tasks.csv" [ (list task-number task-description planned-start planned-finish planned-hours (word ((complete-hours / planned-hours) * 100) "%") actual-hours) ] of tasks
-  csv:to-file "tasks.csv" [ (list task-number project-breakdown-code task-description planned-start planned-finish planned-hours (complete-hours / planned-hours) actual-hours) ] of tasks
+  csv:to-file "output/tasks.csv" [ (list task-number project-breakdown-code task-description planned-start planned-finish planned-hours (complete-hours / planned-hours) actual-hours) ] of tasks
 end
 
 ; procedure to write some turtle properties to a file
 to write-employees-to-csv
   ; we use the `of` primitive to make a list of lists and then
   ; use the csv extension to write that list of lists to a file.
-  csv:to-file "employees.csv" [ (list  employee-number status role motivation) ] of employees
+  csv:to-file "output/employees.csv" [ (list  employee-number status role motivation) ] of employees
 end
 
 to tasks-board-update
@@ -741,12 +741,12 @@ HORIZONTAL
 CHOOSER
 1
 470
-247
+286
 515
 csv-file
 csv-file
-"Sip-task-info.csv" "Software-Development-Plan.csv"
-0
+"input/Sip-task-info.csv" "input/Software-Development-Plan.csv"
+1
 
 SWITCH
 0
@@ -755,7 +755,7 @@ SWITCH
 549
 load-file
 load-file
-1
+0
 1
 -1000
 

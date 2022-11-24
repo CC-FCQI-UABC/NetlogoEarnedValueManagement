@@ -1,61 +1,61 @@
-15,2.8,Secure required resources,Tue 11/29/22 1:00 PM,Wed 11/30/22 12:00 PM,8,1,7
-11,2.4,Review software specifications/budget with team,Thu 11/24/22 1:00 PM,Thu 11/24/22 5:00 PM,8,1,6
-2,1.1,Determine project scope,Mon 11/7/22 8:00 AM,Mon 11/7/22 12:00 PM,4,1,5
-33,5.1,Develop unit test plans using product specifications,Wed 12/21/22 8:00 AM,Mon 12/26/22 5:00 PM,32,1,27
-10,2.3,Develop preliminary budget,Tue 11/22/22 1:00 PM,Thu 11/24/22 12:00 PM,16,1,13
-75,9.1,Determine final deployment strategy,Wed 3/8/23 3:00 PM,Thu 3/9/23 3:00 PM,8,1,7
-49,6.1,Develop training specifications for end users,Wed 12/21/22 8:00 AM,Fri 12/23/22 5:00 PM,24,1,20
-43,5.4.1,Test module integration,Thu 2/9/23 3:00 PM,Thu 2/16/23 3:00 PM,40,1,37
-21,3.4,Review functional specifications,Thu 12/15/22 1:00 PM,Mon 12/19/22 12:00 PM,16,1,17
-19,3.2,Develop functional specifications,Fri 12/2/22 1:00 PM,Fri 12/9/22 12:00 PM,40,1,45
-61,7.4,Incorporate Help documentation feedback,Mon 1/30/23 1:00 PM,Wed 2/1/23 12:00 PM,16,1,17
-26,4.1,Review functional specifications,Wed 12/21/22 8:00 AM,Wed 12/21/22 5:00 PM,8,1,8
-9,2.2,Draft preliminary software specifications,Thu 11/17/22 1:00 PM,Tue 11/22/22 12:00 PM,24,1,18
-60,7.3,Review Help documentation,Wed 1/25/23 1:00 PM,Mon 1/30/23 12:00 PM,24,1,23
-78,9.4,Train support staff,Mon 3/13/23 3:00 PM,Tue 3/14/23 3:00 PM,8,1,7
-12,2.5,Incorporate feedback on software specifications,Fri 11/25/22 8:00 AM,Fri 11/25/22 5:00 PM,8,1,7
-27,4.2,Identify modular/tiered design parameters,Thu 12/22/22 8:00 AM,Thu 12/22/22 5:00 PM,8,1,10
-28,4.3,Assign development staff,Fri 12/23/22 8:00 AM,Fri 12/23/22 5:00 PM,8,1,10
-4,1.3,Define preliminary resources,Tue 11/8/22 1:00 PM,Wed 11/9/22 12:00 PM,8,1,9
-14,2.7,"Obtain approvals to proceed (concept, timeline, budget)",Tue 11/29/22 8:00 AM,Tue 11/29/22 12:00 PM,8,1,8
-65,7.8,Incorporate user documentation feedback,Fri 1/27/23 1:00 PM,Tue 1/31/23 12:00 PM,16,1,15
-79,9.5,Deploy software,Tue 3/14/23 3:00 PM,Wed 3/15/23 3:00 PM,8,1,6
-84,10.3,Create software maintenance team,Fri 3/17/23 3:00 PM,Mon 3/20/23 3:00 PM,8,1,6
-5,1.4,Secure core resources,Wed 11/9/22 1:00 PM,Thu 11/10/22 12:00 PM,8,1,9
+77,9.3,Secure deployment resources,Fri 3/10/23 3:00 PM,Mon 3/13/23 3:00 PM,8,1,6
+64,7.7,Review all user documentation,Wed 1/25/23 1:00 PM,Fri 1/27/23 12:00 PM,16,1,17
 38,5.3.3,Identify anomalies to product specifications,Mon 1/30/23 3:00 PM,Thu 2/2/23 3:00 PM,24,1,22
-34,5.2,Develop integration test plans using product specifications,Wed 12/21/22 8:00 AM,Mon 12/26/22 5:00 PM,32,1,32
-13,2.6,Develop delivery timeline,Mon 11/28/22 8:00 AM,Mon 11/28/22 5:00 PM,8,1,9
-64,7.7,Review all user documentation,Wed 1/25/23 1:00 PM,Fri 1/27/23 12:00 PM,16,1,14
-20,3.3,Develop prototype based on functional specifications,Fri 12/9/22 1:00 PM,Thu 12/15/22 12:00 PM,32,1,32
-40,5.3.5,Re-test modified code,Tue 2/7/23 3:00 PM,Thu 2/9/23 3:00 PM,16,1,17
-50,6.2,Develop training specifications for helpdesk support staff,Wed 12/21/22 8:00 AM,Fri 12/23/22 5:00 PM,24,1,23
-18,3.1,Review preliminary software specifications,Wed 11/30/22 1:00 PM,Fri 12/2/22 12:00 PM,16,1,15
-37,5.3.2,Test component modules to product specifications,Thu 1/26/23 3:00 PM,Mon 1/30/23 3:00 PM,16,1,15
-68,8.1,Identify test group,Wed 11/30/22 1:00 PM,Thu 12/1/22 12:00 PM,8,1,10
-39,5.3.4,Modify code,Thu 2/2/23 3:00 PM,Tue 2/7/23 3:00 PM,24,1,28
-54,6.6,Finalize training materials,Wed 2/15/23 3:00 PM,Mon 2/20/23 3:00 PM,24,1,22
-36,5.3.1,Review modular code,Thu 1/19/23 3:00 PM,Thu 1/26/23 3:00 PM,40,1,41
-22,3.5,Incorporate feedback into functional specifications,Mon 12/19/22 1:00 PM,Tue 12/20/22 12:00 PM,8,1,6
-58,7.1,Develop Help specification,Wed 12/21/22 8:00 AM,Wed 12/21/22 5:00 PM,8,1,7
-45,5.4.3,Modify code,Mon 2/20/23 3:00 PM,Thu 2/23/23 3:00 PM,24,1,20
-72,8.5,Evaluate testing information,Tue 3/7/23 3:00 PM,Wed 3/8/23 3:00 PM,8,1,6
-77,9.3,Secure deployment resources,Fri 3/10/23 3:00 PM,Mon 3/13/23 3:00 PM,8,1,8
-51,6.3,"Identify training delivery methodology (computer based training, classroom, etc.)",Wed 12/21/22 8:00 AM,Thu 12/22/22 5:00 PM,16,1,17
-44,5.4.2,Identify anomalies to specifications,Thu 2/16/23 3:00 PM,Mon 2/20/23 3:00 PM,16,1,13
-70,8.3,Install/deploy software,Mon 2/27/23 3:00 PM,Tue 2/28/23 3:00 PM,8,1,9
-83,10.2,Distribute to team members,Thu 3/16/23 3:00 PM,Fri 3/17/23 3:00 PM,8,1,10
-8,2.1,Conduct needs analysis,Thu 11/10/22 1:00 PM,Thu 11/17/22 12:00 PM,40,1,40
+36,5.3.1,Review modular code,Thu 1/19/23 3:00 PM,Thu 1/26/23 3:00 PM,40,1,39
+19,3.2,Develop functional specifications,Fri 12/2/22 1:00 PM,Fri 12/9/22 12:00 PM,40,1,46
+58,7.1,Develop Help specification,Wed 12/21/22 8:00 AM,Wed 12/21/22 5:00 PM,8,1,9
+33,5.1,Develop unit test plans using product specifications,Wed 12/21/22 8:00 AM,Mon 12/26/22 5:00 PM,32,1,34
+59,7.2,Develop Help system,Wed 1/4/23 1:00 PM,Wed 1/25/23 12:00 PM,120,1,129
+39,5.3.4,Modify code,Thu 2/2/23 3:00 PM,Tue 2/7/23 3:00 PM,24,1,27
+20,3.3,Develop prototype based on functional specifications,Fri 12/9/22 1:00 PM,Thu 12/15/22 12:00 PM,32,1,37
+75,9.1,Determine final deployment strategy,Wed 3/8/23 3:00 PM,Thu 3/9/23 3:00 PM,8,1,4
+79,9.5,Deploy software,Tue 3/14/23 3:00 PM,Wed 3/15/23 3:00 PM,8,1,9
+37,5.3.2,Test component modules to product specifications,Thu 1/26/23 3:00 PM,Mon 1/30/23 3:00 PM,16,1,18
+15,2.8,Secure required resources,Tue 11/29/22 1:00 PM,Wed 11/30/22 12:00 PM,8,1,12
+5,1.4,Secure core resources,Wed 11/9/22 1:00 PM,Thu 11/10/22 12:00 PM,8,1,7
+50,6.2,Develop training specifications for helpdesk support staff,Wed 12/21/22 8:00 AM,Fri 12/23/22 5:00 PM,24,1,27
+43,5.4.1,Test module integration,Thu 2/9/23 3:00 PM,Thu 2/16/23 3:00 PM,40,1,41
+71,8.4,Obtain user feedback,Tue 2/28/23 3:00 PM,Tue 3/7/23 3:00 PM,40,1,42
+83,10.2,Distribute to team members,Thu 3/16/23 3:00 PM,Fri 3/17/23 3:00 PM,8,1,8
+84,10.3,Create software maintenance team,Fri 3/17/23 3:00 PM,Mon 3/20/23 3:00 PM,8,1,8
+11,2.4,Review software specifications/budget with team,Thu 11/24/22 1:00 PM,Thu 11/24/22 5:00 PM,8,1,8
+63,7.6,Develop user manuals,Wed 1/4/23 1:00 PM,Wed 1/25/23 12:00 PM,120,1,122
+54,6.6,Finalize training materials,Wed 2/15/23 3:00 PM,Mon 2/20/23 3:00 PM,24,1,25
+78,9.4,Train support staff,Mon 3/13/23 3:00 PM,Tue 3/14/23 3:00 PM,8,1,9
+72,8.5,Evaluate testing information,Tue 3/7/23 3:00 PM,Wed 3/8/23 3:00 PM,8,1,7
+55,6.7,Develop training delivery mechanism,Mon 2/20/23 3:00 PM,Wed 2/22/23 3:00 PM,16,1,14
+49,6.1,Develop training specifications for end users,Wed 12/21/22 8:00 AM,Fri 12/23/22 5:00 PM,24,1,21
+34,5.2,Develop integration test plans using product specifications,Wed 12/21/22 8:00 AM,Mon 12/26/22 5:00 PM,32,1,35
+22,3.5,Incorporate feedback into functional specifications,Mon 12/19/22 1:00 PM,Tue 12/20/22 12:00 PM,8,1,7
+3,1.2,Secure project sponsorship,Mon 11/7/22 1:00 PM,Tue 11/8/22 12:00 PM,8,1,9
+44,5.4.2,Identify anomalies to specifications,Thu 2/16/23 3:00 PM,Mon 2/20/23 3:00 PM,16,1,14
+70,8.3,Install/deploy software,Mon 2/27/23 3:00 PM,Tue 2/28/23 3:00 PM,8,1,8
+65,7.8,Incorporate user documentation feedback,Fri 1/27/23 1:00 PM,Tue 1/31/23 12:00 PM,16,1,13
+60,7.3,Review Help documentation,Wed 1/25/23 1:00 PM,Mon 1/30/23 12:00 PM,24,1,25
+29,4.4,Develop code,Mon 12/26/22 8:00 AM,Fri 1/13/23 5:00 PM,120,1,122
+52,6.4,Develop training materials,Thu 1/19/23 3:00 PM,Thu 2/9/23 3:00 PM,120,1,126
+9,2.2,Draft preliminary software specifications,Thu 11/17/22 1:00 PM,Tue 11/22/22 12:00 PM,24,1,26
+2,1.1,Determine project scope,Mon 11/7/22 8:00 AM,Mon 11/7/22 12:00 PM,4,1,5
+51,6.3,"Identify training delivery methodology (computer based training, classroom, etc.)",Wed 12/21/22 8:00 AM,Thu 12/22/22 5:00 PM,16,1,14
+26,4.1,Review functional specifications,Wed 12/21/22 8:00 AM,Wed 12/21/22 5:00 PM,8,1,9
+30,4.5,Developer testing (primary debugging),Thu 12/29/22 3:00 PM,Thu 1/19/23 3:00 PM,120,1,120
+61,7.4,Incorporate Help documentation feedback,Mon 1/30/23 1:00 PM,Wed 2/1/23 12:00 PM,16,1,15
+76,9.2,Develop deployment methodology,Thu 3/9/23 3:00 PM,Fri 3/10/23 3:00 PM,8,1,9
+46,5.4.4,Re-test modified code,Thu 2/23/23 3:00 PM,Mon 2/27/23 3:00 PM,16,1,16
+53,6.5,Conduct training usability study,Thu 2/9/23 3:00 PM,Wed 2/15/23 3:00 PM,32,1,32
+8,2.1,Conduct needs analysis,Thu 11/10/22 1:00 PM,Thu 11/17/22 12:00 PM,40,1,46
 82,10.1,Document lessons learned,Wed 3/15/23 3:00 PM,Thu 3/16/23 3:00 PM,8,1,8
-29,4.4,Develop code,Mon 12/26/22 8:00 AM,Fri 1/13/23 5:00 PM,120,1,121
-46,5.4.4,Re-test modified code,Thu 2/23/23 3:00 PM,Mon 2/27/23 3:00 PM,16,1,14
-59,7.2,Develop Help system,Wed 1/4/23 1:00 PM,Wed 1/25/23 12:00 PM,120,1,121
-30,4.5,Developer testing (primary debugging),Thu 12/29/22 3:00 PM,Thu 1/19/23 3:00 PM,120,1,118
-62,7.5,Develop user manuals specifications,Wed 12/21/22 8:00 AM,Thu 12/22/22 5:00 PM,16,1,13
-55,6.7,Develop training delivery mechanism,Mon 2/20/23 3:00 PM,Wed 2/22/23 3:00 PM,16,1,18
-71,8.4,Obtain user feedback,Tue 2/28/23 3:00 PM,Tue 3/7/23 3:00 PM,40,1,33
-3,1.2,Secure project sponsorship,Mon 11/7/22 1:00 PM,Tue 11/8/22 12:00 PM,8,1,4
-23,3.6,Obtain approval to proceed,Tue 12/20/22 1:00 PM,Tue 12/20/22 5:00 PM,8,1,9
-76,9.2,Develop deployment methodology,Thu 3/9/23 3:00 PM,Fri 3/10/23 3:00 PM,8,1,6
-63,7.6,Develop user manuals,Wed 1/4/23 1:00 PM,Wed 1/25/23 12:00 PM,120,1,128
-53,6.5,Conduct training usability study,Thu 2/9/23 3:00 PM,Wed 2/15/23 3:00 PM,32,1,37
-52,6.4,Develop training materials,Thu 1/19/23 3:00 PM,Thu 2/9/23 3:00 PM,120,1,115
+21,3.4,Review functional specifications,Thu 12/15/22 1:00 PM,Mon 12/19/22 12:00 PM,16,1,15
+23,3.6,Obtain approval to proceed,Tue 12/20/22 1:00 PM,Tue 12/20/22 5:00 PM,8,1,10
+12,2.5,Incorporate feedback on software specifications,Fri 11/25/22 8:00 AM,Fri 11/25/22 5:00 PM,8,1,7
+68,8.1,Identify test group,Wed 11/30/22 1:00 PM,Thu 12/1/22 12:00 PM,8,1,8
+13,2.6,Develop delivery timeline,Mon 11/28/22 8:00 AM,Mon 11/28/22 5:00 PM,8,1,7
+40,5.3.5,Re-test modified code,Tue 2/7/23 3:00 PM,Thu 2/9/23 3:00 PM,16,1,18
+28,4.3,Assign development staff,Fri 12/23/22 8:00 AM,Fri 12/23/22 5:00 PM,8,1,6
+45,5.4.3,Modify code,Mon 2/20/23 3:00 PM,Thu 2/23/23 3:00 PM,24,1,20
+14,2.7,"Obtain approvals to proceed (concept, timeline, budget)",Tue 11/29/22 8:00 AM,Tue 11/29/22 12:00 PM,8,1,10
+27,4.2,Identify modular/tiered design parameters,Thu 12/22/22 8:00 AM,Thu 12/22/22 5:00 PM,8,1,7
+4,1.3,Define preliminary resources,Tue 11/8/22 1:00 PM,Wed 11/9/22 12:00 PM,8,1,8
+62,7.5,Develop user manuals specifications,Wed 12/21/22 8:00 AM,Thu 12/22/22 5:00 PM,16,1,20
+18,3.1,Review preliminary software specifications,Wed 11/30/22 1:00 PM,Fri 12/2/22 12:00 PM,16,1,21
+10,2.3,Develop preliminary budget,Tue 11/22/22 1:00 PM,Thu 11/24/22 12:00 PM,16,1,14
