@@ -942,7 +942,7 @@ Cost Performance Index at Conclusion, CPIAC.
 
 ## HOW TO USE IT
 
-### Setup the model
+### Setup
 
   1. First, establish the number of employees involved and the number of tasks to perform on the project.
   2. Second, the setup procedure will generate the number of tasks selected with random units of effort with values between 1 and 10 and the desired set of employees.
@@ -952,37 +952,41 @@ Cost Performance Index at Conclusion, CPIAC.
 
 ### Running the model
 
-1. 
-2. 
+1. Run the simulation step by step or in continue running.
+2. On the fly, alter the values of probability-of-delay, probability-of-advance, or assigned-tasks-employee to see the consequences on the burndown chart and system state.
 
 ### After finishing simulation
-1. 
-2. 
+
+1. Review the outcomes (burndown chart and EVM metrics).
+2. Download tasks and employees' status to a CSV file if required. 
+3. Use the EVM attached tools to compare results.
 
 
 ## THINGS TO NOTICE
 
-(suggested things for the user to notice while running the model)
+Note that although the probabilities of delay and progress are equal, the project does not necessarily end with the estimated cost. Check the performance indexes values while simulation running if you change simulation condition in runtime.
 
 ## THINGS TO TRY
 
-(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
+1. Try to create different configurations by imagining scenarios according to experience. 
+2. Try loading sample tasks from the CSV files. One sample file comes from a software development project with 12299 tasks. The second file comes from a Microsoft Project sample file with a basic software development project template with 61 tasks. 
 
 ## EXTENDING THE MODEL
 
-(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
+Loading the tasks from a CSV file demonstrates how we can import representative scenarios for analysis. The model can be extended by loading new files with sample tasks.
 
-## NETLOGO FEATURES
+We could try adding human factors to the model. In that case, we could also add the decision-making attributes of individuals or some social factors resulting from their interactions and relationships.
 
-(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
+Adding emergent behaviors resulting from the interaction of team members could add complexity to the model to explore the production system as a complex adaptive system.
 
-## RELATED MODELS
-
-(models in the NetLogo Models Library and elsewhere which are of related interest)
 
 ## CREDITS AND REFERENCES
 
-(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+This model is an output of a research project supported by the internal research project fund of the Autonomous University of Baja California. Project registry: 300/6/C/11/22.
+
+## LICENSE
+
+Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is licensed under CC BY 4.0. To view a copy of this license, visit http://creativecommons.org/licenses/by/4.0/
 @#$#@#$#@
 default
 true
