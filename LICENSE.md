@@ -1,6 +1,6 @@
 Creative Commons Legal Code
 
-CC BY 4.0
+CC-BY-4.0 license
 
     Creative Commons Corporation (“Creative Commons”) is not a law firm and does not provide 
     legal services or legal advice. Distribution of Creative Commons public licenses does not create a 
