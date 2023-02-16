@@ -419,7 +419,7 @@ number-of-tasks
 number-of-tasks
 1
 200
-187.0
+200.0
 1
 1
 NIL
@@ -732,7 +732,7 @@ assigned-tasks-employee
 assigned-tasks-employee
 1
 10
-8.0
+3.0
 1
 1
 NIL
@@ -1297,6 +1297,70 @@ NetLogo 6.3.0
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
+<experiments>
+  <experiment name="experiment" repetitions="1" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>csv:to-file (word "/Users/puga/Desktop/test3/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (complete-hours / planned-hours) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
+    <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
+    <metric>AC</metric>
+    <metric>PV</metric>
+    <metric>EV</metric>
+    <metric>SV</metric>
+    <metric>SPI</metric>
+    <metric>CV</metric>
+    <metric>CPI</metric>
+    <metric>ticks</metric>
+    <steppedValueSet variable="employees-number" first="1" step="1" last="7"/>
+    <steppedValueSet variable="assigned-tasks-employee" first="1" step="1" last="3"/>
+    <steppedValueSet variable="probability-of-delay" first="0" step="0.1" last="0.9"/>
+    <steppedValueSet variable="probability-of-advance" first="0" step="0.1" last="0.9"/>
+    <enumeratedValueSet variable="load-file">
+      <value value="true"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="csv-file">
+      <value value="&quot;input/Software-Development-Plan.csv&quot;"/>
+    </enumeratedValueSet>
+  </experiment>
+  <experiment name="experiment_small" repetitions="1" sequentialRunOrder="false" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <final>csv:to-file (word "/Users/puga/Desktop/test5/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (complete-hours / planned-hours) actual-hours AC PV PV2 EV SV SPI CV CPI ticks) ] of tasks</final>
+    <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
+    <metric>count tasks with [status = "to-do"]</metric>
+    <metric>count tasks with [status = "in-progress"]</metric>
+    <metric>count tasks with [status = "done"]</metric>
+    <metric>AC</metric>
+    <metric>PV</metric>
+    <metric>PV2</metric>
+    <metric>EV</metric>
+    <metric>SV</metric>
+    <metric>SPI</metric>
+    <metric>CV</metric>
+    <metric>CPI</metric>
+    <enumeratedValueSet variable="employees-number">
+      <value value="3"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="number-of-tasks">
+      <value value="200"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="assigned-tasks-employee">
+      <value value="3"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="probability-of-advance">
+      <value value="0.2"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="probability-of-delay">
+      <value value="0.2"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="load-file">
+      <value value="true"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="csv-file">
+      <value value="&quot;input/Software-Development-Plan.csv&quot;"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>
 @#$#@#$#@
 @#$#@#$#@
 default
