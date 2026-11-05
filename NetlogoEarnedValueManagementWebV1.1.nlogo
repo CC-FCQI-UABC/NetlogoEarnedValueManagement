@@ -1,9 +1,9 @@
 ;;EXTENSIONS
 
-extensions [ csv ]
+;extensions [ csv ]
 
 ;;INCLUDING A NETLOGO SOURCE FILES
-__includes["EarnedValueManagement.nls"]
+;__includes["EarnedValueManagement.nls"]
 
 ;;GLOBAL VARIABLES
 globals [tasks-count fibonacci]
@@ -46,81 +46,11 @@ to setup
   reset-ticks
 end
 
-to read-csv
-  file-close-all ; close all open files
-
-  if not file-exists? csv-file [
-    user-message "No file exists!"
-    stop
-  ]
-
-  file-open csv-file ; open the file with the tasks data
-
-  if csv-file = "input/Sip-task-info.csv" [
-    ; We'll read all the data in a single loop
-    while [ not file-at-end? ] [
-      ; here the CSV extension grabs a single line and puts the read data in a list
-      let data csv:from-row file-read-line
-      ; now we can use that list to create a tasks with the saved properties
-      create-tasks 1 [
-        set color red
-        set shape "square"
-        set tasks-count 0
-        set status "to-do"
-        set task-number item 0 data
-        set task-description item 1 data
-        set priority item 2 data
-        set project-code item 7 data
-        set project-breakdown-code item 8 data
-        set category item 9 data
-        set sub-category item 10 data
-        set planned-start "01/01/2022"
-        set planned-finish "01/02/2022"
-        set planned-hours round item 11 data
-        set complete-hours 0
-        set actual-hours 0]
-    ]
-  ]
-
-    if csv-file = "input/Software-Development-Plan.csv" [
-    ; We'll read all the data in a single loop
-    while [ not file-at-end? ] [
-      ; here the CSV extension grabs a single line and puts the read data in a list
-      let data csv:from-row file-read-line
-      ; now we can use that list to create a tasks with the saved properties
-      if item 5 data != ""[ ;if the retived task have an assigned team member, then create a task in the model.
-        create-tasks 1 [
-          set color red
-          set shape "square"
-          set tasks-count 0
-          set status "to-do"
-          set task-number item 2 data
-          set task-description item 4 data
-          set priority item 11 data
-          set project-code 0
-          set project-breakdown-code item 3 data
-          set category 0
-          set sub-category 0
-          set planned-start item 8 data
-          set planned-finish item 9 data
-          set planned-hours item 10 data
-          set complete-hours 0
-          set actual-hours 0]
-      ]
-    ]
-  ]
-
-  file-close ; make sure to close the file
-end
-
 to setup-tasks
-  ifelse load-file [
-    read-csv
-  ][
+
     create-tasks number-of-tasks [
       set color red
       set shape "square"
-      set tasks-count 0
       set status "to-do"
       set task-number 100
       set task-description "task-description"
@@ -131,10 +61,9 @@ to setup-tasks
       set sub-category 0
       set planned-start "01/01/2022"
       set planned-finish "01/02/2022"
-      set planned-hours item random 10 [1 2 3 5 8 13 21 34 55 89 144 233]
+      set planned-hours item random 12 [1 2 3 5 8 13 21 34 55 89 144 233]
       set complete-hours 0
       set actual-hours 0]
-  ]
 
   set tasks-count count tasks - 1
   tasks-board-update
@@ -171,7 +100,7 @@ to the-employee-picks-tasks-from-the-to-do-backlog
   foreach sort employees[
     the-employee -> ask the-employee [
       if count out-link-neighbors with [status = "in-progress"] < assigned-tasks-employee [
-        if tasks-count >= 0 [
+        if tasks-count >= 0 and is-turtle? task tasks-count [
           create-link-with task tasks-count
           set tasks-count tasks-count - 1
         ]
@@ -219,21 +148,6 @@ to create-team
       set color blue
     ]
   ]
-end
-
-; procedure to write some turtle properties to a file
-to write-tasks-to-csv
-  ; we use the `of` primitive to make a list of lists and then
-  ; use the csv extension to write that list of lists to a file.
-  ; csv:to-file "tasks.csv" [ (list task-number task-description planned-start planned-finish planned-hours (word ((complete-hours / planned-hours) * 100) "%") actual-hours) ] of tasks
-  csv:to-file "output/tasks.csv" [ (list task-number project-breakdown-code task-description planned-start planned-finish planned-hours (complete-hours / planned-hours) actual-hours) ] of tasks
-end
-
-; procedure to write some turtle properties to a file
-to write-employees-to-csv
-  ; we use the `of` primitive to make a list of lists and then
-  ; use the csv extension to write that list of lists to a file.
-  csv:to-file "output/employees.csv" [ (list  employee-number status role motivation) ] of employees
 end
 
 to tasks-board-update
@@ -284,6 +198,149 @@ to tasks-board-update
       [set y 0]
     ]
   ]
+end
+
+to-report BAC
+  let budget-at-completion 0
+  foreach sort tasks [
+    the-task -> ask the-task [
+      set budget-at-completion budget-at-completion + planned-hours;
+    ]
+  ]
+  report budget-at-completion
+end
+
+;to-report PV
+;  let planned-value 0
+;  foreach sort tasks with [status = "done" or status = "in-progress" or status = "to-do"][
+;    the-task -> ask the-task [
+;        set planned-value planned-value + planned-hours;
+;    ]
+;  ]
+;  report planned-value
+;end
+
+to-report PV
+  let planned-value 0
+  foreach sort tasks [
+    the-task -> ask the-task [
+        set planned-value planned-value + planned-hours;
+    ]
+  ]
+  report planned-value
+end
+
+to-report PV2
+  let planned-value 0
+  foreach sort tasks with [status = "done" or status = "in-progress"][
+    the-task -> ask the-task [
+        set planned-value planned-value + planned-hours;
+    ]
+  ]
+  report planned-value
+end
+
+to-report AC
+  let actual-cost 0
+  foreach sort tasks with [status = "done" or status = "in-progress"][
+    the-task -> ask the-task [
+      set actual-cost actual-cost + actual-hours;
+    ]
+  ]
+  report actual-cost
+end
+
+to-report EV
+  let earned-value 0
+  foreach sort tasks with [status = "done" or status = "in-progress"][
+    the-task -> ask the-task [
+        set earned-value earned-value + complete-hours ;
+    ]
+  ]
+  report earned-value
+end
+
+to-report PV%
+  ifelse BAC > 0 [report (PV / BAC)][report 1]
+end
+
+to-report PV2%
+  ifelse BAC > 0 [report (PV2 / BAC)][report 1]
+end
+
+to-report EV%
+  ifelse BAC > 0 [report (EV / BAC)][report 1]
+end
+
+to-report AC%
+  ifelse BAC > 0 [report (AC / BAC)][report 1]
+end
+
+to-report SV
+  report EV - PV
+end
+
+to-report CV
+  report EV - AC
+end
+
+to-report SV%
+  ifelse PV > 0 [report SV / PV][report 1]
+end
+
+to-report CV%
+  ifelse EV > 0 [report CV / EV][report 1]
+end
+
+to-report SPI
+  ifelse PV > 0 [report EV / PV][report 1]
+end
+
+to-report CPI
+  ifelse AC > 0 [report EV / AC][report 1]
+end
+
+to-report TCPI
+  ifelse (BAC - AC) > 0 [report (BAC - EV) / (BAC - AC)][report 1]
+end
+
+
+to-report EAC1
+  report BAC + SV
+end
+
+to-report EAC2
+  ifelse CPI > 0 [report BAC / CPI][report 1]
+end
+
+
+to-report ETC
+  report EAC1 - AC
+end
+
+to-report ETC2
+  report EAC2 - AC
+end
+
+
+to-report VAC
+  report BAC - EAC1
+end
+
+to-report VAC%
+  ifelse BAC > 0 [report VAC / BAC][report 1]
+end
+
+to-report CPIAC
+  ifelse EAC1 > 0 [report BAC / EAC1][report 1]
+end
+
+to-report EACt
+  ifelse SPI > 0 and PMB-Duration > 0 and BAC > 0 [report (BAC / SPI) / (BAC / PMB-Duration)][report 1]
+end
+
+to-report PMB-Duration
+  ifelse count employees > 0 [report BAC / count employees][report 1]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -387,7 +444,7 @@ employees-number
 employees-number
 1
 100
-3.0
+5.0
 1
 1
 NIL
@@ -418,8 +475,8 @@ SLIDER
 number-of-tasks
 number-of-tasks
 1
-200
-200.0
+2000
+1.0
 1
 1
 NIL
@@ -738,27 +795,6 @@ assigned-tasks-employee
 NIL
 HORIZONTAL
 
-CHOOSER
-1
-470
-286
-515
-csv-file
-csv-file
-"input/Sip-task-info.csv" "input/Software-Development-Plan.csv"
-1
-
-SWITCH
-0
-516
-109
-549
-load-file
-load-file
-0
-1
--1000
-
 SLIDER
 0
 114
@@ -773,23 +809,6 @@ probability-of-advance
 1
 NIL
 HORIZONTAL
-
-BUTTON
-0
-551
-277
-584
-Write tasks to tasks.csv
-write-tasks-to-csv
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
 
 PLOT
 1035
@@ -826,23 +845,6 @@ false
 "" ""
 PENS
 "PMB-duration" 1.0 0 -16777216 true "" "plot PMB-Duration"
-
-BUTTON
-0
-586
-277
-619
-Write employees to employees.csv
-write-employees-to-csv
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -1301,7 +1303,7 @@ NetLogo 6.3.0
   <experiment name="experiment" repetitions="1" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
-    <final>csv:to-file (word "/Users/puga/Desktop/test3/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (complete-hours / planned-hours) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
+    <final>csv:to-file (word "/Users/puga/Desktop/test3/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
     <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
     <metric>AC</metric>
     <metric>PV</metric>
@@ -1325,7 +1327,7 @@ NetLogo 6.3.0
   <experiment name="experiment_small" repetitions="1" sequentialRunOrder="false" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
-    <final>csv:to-file (word "/Users/puga/Desktop/test5/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (complete-hours / planned-hours) actual-hours AC PV PV2 EV SV SPI CV CPI ticks) ] of tasks</final>
+    <final>csv:to-file (word "/Users/puga/Desktop/test5/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV PV2 EV SV SPI CV CPI ticks) ] of tasks</final>
     <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
     <metric>count tasks with [status = "to-do"]</metric>
     <metric>count tasks with [status = "in-progress"]</metric>
