@@ -75,7 +75,7 @@ to read-csv
         set sub-category item 10 data
         set planned-start "01/01/2022"
         set planned-finish "01/02/2022"
-        set planned-hours round item 11 data
+        set planned-hours max (list 1 round item 11 data)
         set complete-hours 0
         set actual-hours 0]
     ]
@@ -191,16 +191,23 @@ end
 to the-employee-achieves-and-moves-tasks-to-the-done-cue
   ask employees [
     ask out-link-neighbors with [status = "in-progress"][
-      ifelse complete-hours >= planned-hours[
-        set color green
-        set status "done"
-      ][
-        if (random 100 >= probability-of-delay * 100    )[
+      if complete-hours < planned-hours [
+        ;; every hour worked costs one hour, whether or not it produces progress
+        set actual-hours actual-hours + 1
+        ;; with probability-of-delay the hour is lost (no progress)
+        if random-float 1 >= probability-of-delay [
           set complete-hours complete-hours + 1
         ]
-        if (random 100 >= probability-of-advance * 100    )[
-          set actual-hours actual-hours + 1
+        ;; with probability-of-advance the task progresses an extra hour at no extra cost
+        if random-float 1 < probability-of-advance [
+          set complete-hours complete-hours + 1
         ]
+        set complete-hours min (list complete-hours planned-hours)
+      ]
+      ;; completion is checked right after the work, so there is no one-tick lag
+      if complete-hours >= planned-hours [
+        set color green
+        set status "done"
       ]
     ]
   ]
@@ -460,7 +467,7 @@ true
 true
 "" ""
 PENS
-"PV%" 1.0 0 -10899396 true "" "plot PV2%"
+"PV%" 1.0 0 -10899396 true "" "plot PV%"
 "AC%" 1.0 0 -2674135 true "" "plot AC%"
 "EV%" 1.0 0 -13345367 true "" "plot EV%"
 
@@ -1322,14 +1329,13 @@ NetLogo 6.3.0
   <experiment name="experiment_small" repetitions="1" sequentialRunOrder="false" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
-    <final>csv:to-file (word "/Users/puga/Desktop/test5/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV PV2 EV SV SPI CV CPI ticks) ] of tasks</final>
+    <final>csv:to-file (word "/Users/puga/Desktop/test5/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
     <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
     <metric>count tasks with [status = "to-do"]</metric>
     <metric>count tasks with [status = "in-progress"]</metric>
     <metric>count tasks with [status = "done"]</metric>
     <metric>AC</metric>
     <metric>PV</metric>
-    <metric>PV2</metric>
     <metric>EV</metric>
     <metric>SV</metric>
     <metric>SPI</metric>

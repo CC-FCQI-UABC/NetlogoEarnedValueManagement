@@ -123,16 +123,23 @@ end
 to the-employee-achieves-and-moves-tasks-to-the-done-cue
   ask employees [
     ask out-link-neighbors with [status = "in-progress"][
-      ifelse complete-hours >= planned-hours[
-        set color green
-        set status "done"
-      ][
-        if (random 100 >= probability-of-delay * 100    )[
+      if complete-hours < planned-hours [
+        ;; every hour worked costs one hour, whether or not it produces progress
+        set actual-hours actual-hours + 1
+        ;; with probability-of-delay the hour is lost (no progress)
+        if random-float 1 >= probability-of-delay [
           set complete-hours complete-hours + 1
         ]
-        if (random 100 >= probability-of-advance * 100    )[
-          set actual-hours actual-hours + 1
+        ;; with probability-of-advance the task progresses an extra hour at no extra cost
+        if random-float 1 < probability-of-advance [
+          set complete-hours complete-hours + 1
         ]
+        set complete-hours min (list complete-hours planned-hours)
+      ]
+      ;; completion is checked right after the work, so there is no one-tick lag
+      if complete-hours >= planned-hours [
+        set color green
+        set status "done"
       ]
     ]
   ]
@@ -200,72 +207,37 @@ to tasks-board-update
   ]
 end
 
+;; Budget at Completion: total planned hours of all tasks
 to-report BAC
-  let budget-at-completion 0
-  foreach sort tasks [
-    the-task -> ask the-task [
-      set budget-at-completion budget-at-completion + planned-hours;
-    ]
-  ]
-  report budget-at-completion
+  report sum [planned-hours] of tasks
 end
 
-;to-report PV
-;  let planned-value 0
-;  foreach sort tasks with [status = "done" or status = "in-progress" or status = "to-do"][
-;    the-task -> ask the-task [
-;        set planned-value planned-value + planned-hours;
-;    ]
-;  ]
-;  report planned-value
-;end
+;; Performance Measurement Baseline duration (in ticks): the ideal plan assumes
+;; every employee works assigned-tasks-employee tasks in parallel, 1 hour per tick each.
+to-report PMB-Duration
+  ifelse count employees > 0 and assigned-tasks-employee > 0
+    [report BAC / (count employees * assigned-tasks-employee)]
+    [report 1]
+end
 
+;; Planned Value: time-phased linear baseline, BAC * (elapsed time / planned duration), capped at BAC
 to-report PV
-  let planned-value 0
-  foreach sort tasks [
-    the-task -> ask the-task [
-        set planned-value planned-value + planned-hours;
-    ]
-  ]
-  report planned-value
+  if BAC <= 0 or PMB-Duration <= 0 [report 0]
+  report BAC * min (list 1 (ticks / PMB-Duration))
 end
 
-to-report PV2
-  let planned-value 0
-  foreach sort tasks with [status = "done" or status = "in-progress"][
-    the-task -> ask the-task [
-        set planned-value planned-value + planned-hours;
-    ]
-  ]
-  report planned-value
-end
-
+;; Actual Cost: hours actually spent on tasks
 to-report AC
-  let actual-cost 0
-  foreach sort tasks with [status = "done" or status = "in-progress"][
-    the-task -> ask the-task [
-      set actual-cost actual-cost + actual-hours;
-    ]
-  ]
-  report actual-cost
+  report sum [actual-hours] of tasks
 end
 
+;; Earned Value: planned hours of the work actually accomplished
 to-report EV
-  let earned-value 0
-  foreach sort tasks with [status = "done" or status = "in-progress"][
-    the-task -> ask the-task [
-        set earned-value earned-value + complete-hours ;
-    ]
-  ]
-  report earned-value
+  report sum [complete-hours] of tasks
 end
 
 to-report PV%
   ifelse BAC > 0 [report (PV / BAC)][report 1]
-end
-
-to-report PV2%
-  ifelse BAC > 0 [report (PV2 / BAC)][report 1]
 end
 
 to-report EV%
@@ -304,15 +276,15 @@ to-report TCPI
   ifelse (BAC - AC) > 0 [report (BAC - EV) / (BAC - AC)][report 1]
 end
 
-
+;; Estimate at Completion, assuming the remaining work is done at the budgeted rate: BAC - CV
 to-report EAC1
-  report BAC + SV
+  report BAC - CV
 end
 
+;; Estimate at Completion, assuming the current cost performance continues: BAC / CPI
 to-report EAC2
   ifelse CPI > 0 [report BAC / CPI][report 1]
 end
-
 
 to-report ETC
   report EAC1 - AC
@@ -321,7 +293,6 @@ end
 to-report ETC2
   report EAC2 - AC
 end
-
 
 to-report VAC
   report BAC - EAC1
@@ -335,12 +306,9 @@ to-report CPIAC
   ifelse EAC1 > 0 [report BAC / EAC1][report 1]
 end
 
+;; Time Estimate at Completion: planned duration / SPI
 to-report EACt
-  ifelse SPI > 0 and PMB-Duration > 0 and BAC > 0 [report (BAC / SPI) / (BAC / PMB-Duration)][report 1]
-end
-
-to-report PMB-Duration
-  ifelse count employees > 0 [report BAC / count employees][report 1]
+  ifelse SPI > 0 [report PMB-Duration / SPI][report PMB-Duration]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -520,7 +488,7 @@ true
 true
 "" ""
 PENS
-"PV%" 1.0 0 -10899396 true "" "plot PV2%"
+"PV%" 1.0 0 -10899396 true "" "plot PV%"
 "AC%" 1.0 0 -2674135 true "" "plot AC%"
 "EV%" 1.0 0 -13345367 true "" "plot EV%"
 
@@ -1327,14 +1295,13 @@ NetLogo 6.3.0
   <experiment name="experiment_small" repetitions="1" sequentialRunOrder="false" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
-    <final>csv:to-file (word "/Users/puga/Desktop/test5/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV PV2 EV SV SPI CV CPI ticks) ] of tasks</final>
+    <final>csv:to-file (word "/Users/puga/Desktop/test5/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
     <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
     <metric>count tasks with [status = "to-do"]</metric>
     <metric>count tasks with [status = "in-progress"]</metric>
     <metric>count tasks with [status = "done"]</metric>
     <metric>AC</metric>
     <metric>PV</metric>
-    <metric>PV2</metric>
     <metric>EV</metric>
     <metric>SV</metric>
     <metric>SPI</metric>
