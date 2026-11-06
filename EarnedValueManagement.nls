@@ -191,6 +191,8 @@ to-report compute-es
   if BAC <= 0 [report 0]
   let earned min (list EV BAC)
   if earned <= 0 [report 0]
+  ;; the baseline already planned that much at time 0 (for example zero-duration tasks at the start)
+  if planned-value-at 0 >= earned [report 0]
   ;; earliest time at which the baseline planned to have earned that much (binary search + interpolation)
   let lo 0
   let hi PMB-Duration

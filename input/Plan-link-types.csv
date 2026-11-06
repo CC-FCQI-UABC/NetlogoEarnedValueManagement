@@ -1,0 +1,6 @@
+1,,1,1,A: base task,Dev,2 days,0%,Mon 11/7/22 8:00 AM,Tue 11/8/22 5:00 PM,16,500,
+2,,2,2,B: starts 8 h after A starts (SS+8 hrs),Dev,2 days,0%,Tue 11/8/22 8:00 AM,Wed 11/9/22 5:00 PM,16,500,1SS+8 hrs
+3,,3,3,C: cannot finish before A finishes (FF),Dev,1 day,0%,Tue 11/8/22 8:00 AM,Tue 11/8/22 5:00 PM,8,500,1FF
+4,,4,4,D: starts 50% of B's duration after B finishes (FS+50%),Dev,1 day,0%,Fri 11/11/22 8:00 AM,Fri 11/11/22 5:00 PM,8,500,2FS+50%
+5,,5,5,E: cannot finish before D starts + 8 h (SF),Dev,1 day,0%,Fri 11/11/22 8:00 AM,Fri 11/11/22 5:00 PM,8,500,4SF+8 hrs
+6,,6,6,F: starts 1 day after E finishes (FS+1 day),Dev,1 day,0%,Tue 11/15/22 8:00 AM,Tue 11/15/22 5:00 PM,8,500,5FS+1 day

@@ -15,6 +15,7 @@ task board, while tasks can be delayed or advanced at random.
 | `EarnedValueManagement.nls` | EVM reporters (BAC, PV, EV, AC, SPI, CPI, TCPI, EAC, ES, EACt...) included by the desktop model. |
 | `input/Software-Development-Plan.csv` | Sample plan exported from MS Project (61 tasks with dates and predecessors). |
 | `input/Plan-link-types.csv` | Small demo plan with one link of each type (SS, FF, FS with a percentage lag, SF, FS with a lag). |
+| `input/Sip-task-info.csv` | Sample task data from an earlier (SIP) data set. It is not read by the model and is not in the `plan-file` chooser; kept for reference only. |
 | `output/` | Sample output of `Write tasks to tasks.csv` / `Write employees to employees.csv`. |
 | `tests/check_regression.py` | Headless regression checks (see below). |
 | `tests/plans/` | Plan files used by the tests: one tolerant file (header, blank lines, other date formats) and six with a deliberate error. |

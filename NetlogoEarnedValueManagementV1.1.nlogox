@@ -167,7 +167,7 @@ to-report plan-row-problem [data]
   if not empty? filter [r -> item 2 r = item 2 data] plan-rows [report (word "duplicate ID " item 2 data)]
   ;; predecessors are checked for every row
   let tokens split-on (word item 12 data) ","
-  let wanted filter [x -> x != ""] tokens
+  let wanted filter [x -> not blank-text? x] tokens
   if length predecessor-specs data != length wanted [
     report (word "cannot read the predecessors '" item 12 data "' (expected IDs like 3, 3FS-2 days, 3SS+50%)")
   ]
@@ -182,6 +182,15 @@ end
 
 to-report blank-text? [s]
   report empty? filter [ch -> not member? ch [" " "\t" "\r"]] n-values length s [i -> item i s]
+end
+
+;; s without its leading and trailing spaces
+to-report trim-text [s]
+  let first-i 0
+  let last-i length s
+  while [first-i < last-i and item first-i s = " "] [set first-i first-i + 1]
+  while [last-i > first-i and item (last-i - 1) s = " "] [set last-i last-i - 1]
+  report substring s first-i last-i
 end
 
 to-report integer-text? [s]
@@ -263,7 +272,8 @@ to-report parse-plan-tick [s]
   let dt parse-plan-date-time s
   if empty? dt [report 0]
   let clock (item 3 dt) + (item 4 dt) / 60
-  let workday-hour ifelse-value clock <= 12 [clock - 8][clock - 9]
+  ;; the lunch hour (12:00-1:00 PM) counts as the end of the morning
+  let workday-hour ifelse-value clock <= 12 [clock - 8][max (list 4 (clock - 9))]
   set workday-hour max (list 0 min (list 8 workday-hour))
   let dn days-from-civil (item 0 dt) (item 1 dt) (item 2 dt)
   report 8 * business-days-before dn + workday-hour
@@ -290,7 +300,8 @@ end
 ;; into [id lag type percent?]. type is FS, SS, FF or SF (default FS). The lag is in hours (negative =
 ;; lead), or a percentage of the predecessor's duration when percent? is true. The lag unit defaults
 ;; to days (8 working hours), like MS Project.
-to-report parse-predecessor [token]
+to-report parse-predecessor [raw-token]
+  let token trim-text raw-token
   let id leading-number token
   if id < 0 [report []]
   let rest substring token (length (word id)) (length token)
@@ -302,31 +313,38 @@ to-report parse-predecessor [token]
   let lag 0
   let percent? false
   if length rest > 0 [
-    let parts split-on rest " "
-    let amount-text first parts
-    if first amount-text = "+" [set amount-text but-first amount-text]
-    if length amount-text > 0 and last amount-text = "%" [
-      set percent? true
-      set amount-text but-last amount-text
-    ]
-    let amount ifelse-value number-text? amount-text [read-from-string amount-text][0]
-    let unit-hours 8
-    let minutes? false
-    ifelse percent? [
-      set unit-hours 1
-    ][
-      if length parts > 1 and length item 1 parts > 0 [
-        let unit first item 1 parts
-        if unit = "h" [set unit-hours 1]
-        if unit = "m" [set minutes? true]
-        if unit = "w" [set unit-hours 40]
+    let parts filter [w -> w != ""] split-on rest " "
+    if length parts > 2 [report []]
+    if not empty? parts [
+      let amount-text first parts
+      if first amount-text = "+" [set amount-text but-first amount-text]
+      if length amount-text > 0 and last amount-text = "%" [
+        set percent? true
+        set amount-text but-last amount-text
+      ]
+      if not number-text? amount-text [report []]
+      let amount read-from-string amount-text
+      ;; the unit must be a whole word; unknown units (for example elapsed days) are not accepted
+      let unit ifelse-value length parts > 1 [item 1 parts][""]
+      let unit-hours 8
+      let minutes? false
+      ifelse percent? [
+        if unit != "" [report []]
+        set unit-hours 1
+      ][
         if unit = "%" [
           set percent? true
           set unit-hours 1
         ]
+        if member? unit ["h" "hr" "hrs" "hour" "hours"] [set unit-hours 1]
+        if member? unit ["m" "min" "mins" "minute" "minutes"] [set minutes? true]
+        if member? unit ["d" "day" "days"] [set unit-hours 8]
+        if member? unit ["w" "wk" "wks" "week" "weeks"] [set unit-hours 40]
+        if member? unit ["mo" "mon" "mons" "month" "months"] [set unit-hours 160]
+        if not member? unit ["" "%" "h" "hr" "hrs" "hour" "hours" "m" "min" "mins" "minute" "minutes" "d" "day" "days" "w" "wk" "wks" "week" "weeks" "mo" "mon" "mons" "month" "months"] [report []]
       ]
+      set lag ifelse-value minutes? [amount / 60][amount * unit-hours]
     ]
-    set lag ifelse-value minutes? [amount / 60][amount * unit-hours]
   ]
   report (list id lag kind percent?)
 end
@@ -407,6 +425,12 @@ to finish-plan
     ]
   ]
   if plan-error != "" [stop]
+  ;; a dependency cycle (also through summary rows) would deadlock the project and loop resolve-predecessors forever
+  let stuck-line cyclic-plan-line
+  if stuck-line >= 0 [
+    plan-fail (word "line " stuck-line ": circular dependency (this row is in, or depends on, a cycle of predecessors)")
+    stop
+  ]
   let origin min [start-tick] of tasks
   ask tasks [
     set start-tick start-tick - origin
@@ -414,6 +438,20 @@ to finish-plan
     let me task-number
     set-predecessors resolve-predecessors predecessor-specs first filter [r -> item 2 r = me] plan-rows
   ]
+end
+
+;; Line number of a plan row that is part of, or depends on, a cycle of predecessors; -1 if there is none.
+;; Rows without pending predecessors are removed repeatedly; the rows that are left are stuck.
+to-report cyclic-plan-line
+  let pending map [r -> (list (item 2 r) (remove (item 2 r) (map [s -> item 0 s] predecessor-specs r)) (last r))] plan-rows
+  let progress true
+  while [progress] [
+    let ids map [p -> item 0 p] pending
+    let stuck filter [p -> not empty? filter [d -> member? d ids] item 1 p] pending
+    set progress length stuck < length pending
+    set pending stuck
+  ]
+  report ifelse-value empty? pending [-1][item 2 first pending]
 end
 
 ;; Random precedence network: with probability dependency-probability a task gets 1 to 3
@@ -483,10 +521,12 @@ to-report link-text [p]
 end
 
 to setup-employees
+  let next-number 1
   create-employees employees-number [
     setxy random-xcor (random 16) - 16
     set shape "person"
-    set employee-number random 10000
+    set employee-number next-number
+    set next-number next-number + 1
     set status "Active"
     set role "Developer"
     set motivation 1.0
@@ -578,28 +618,35 @@ to the-employee-moves-assignments-to-the-in-progress-queue
 end
 
 to the-employee-achieves-and-moves-tasks-to-the-done-cue
-  ask employees [
-    ask out-assignment-neighbors with [status = "in-progress"][
-      if complete-hours < planned-hours [
-        ;; every hour worked costs one hour, whether or not it produces progress
-        set actual-hours actual-hours + 1
-        ;; with probability-of-delay the hour is lost (no progress)
-        if random-float 1 >= probability-of-delay [
-          set complete-hours complete-hours + 1
-        ]
-        ;; with probability-of-advance the task progresses an extra hour at no extra cost
-        if random-float 1 < probability-of-advance [
-          set complete-hours complete-hours + 1
-        ]
-        set complete-hours min (list complete-hours planned-hours)
+  ;; phase 1: every task in progress gets its hour of work
+  ask tasks with [status = "in-progress"][
+    if complete-hours < planned-hours [
+      ;; every hour worked costs one hour, whether or not it produces progress
+      set actual-hours actual-hours + 1
+      ;; with probability-of-delay the hour is lost (no progress)
+      if random-float 1 >= probability-of-delay [
+        set complete-hours complete-hours + 1
       ]
-      ;; completion is checked right after the work, so there is no one-tick lag
-      if complete-hours >= planned-hours and finish-allowed? [
-        set color green
-        set status "done"
-        set done-tick ticks + 1
+      ;; with probability-of-advance the task progresses an extra hour at no extra cost
+      if random-float 1 < probability-of-advance [
+        set complete-hours complete-hours + 1
       ]
+      set complete-hours min (list complete-hours planned-hours)
     ]
+  ]
+  ;; phase 2: completion is checked after all the work of the tick, so FF/SF gates do not depend on
+  ;; the order in which tasks are processed. Tasks finishing together are completed at once, and the
+  ;; check is repeated because their successors (FF with lag 0) may be allowed to finish in this tick too.
+  let finishing tasks with [status = "in-progress" and complete-hours >= planned-hours and finish-allowed?]
+  while [any? finishing] [
+    ask finishing [
+      set color green
+      set status "done"
+      set done-tick ticks + 1
+      ;; the employee is free again; dropping the link keeps the per-employee counts proportional to the active work
+      ask my-in-assignments [die]
+    ]
+    set finishing tasks with [status = "in-progress" and complete-hours >= planned-hours and finish-allowed?]
   ]
   tasks-board-update
 end

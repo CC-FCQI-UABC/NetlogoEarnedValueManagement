@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <model version="NetLogo 7.0.4" snapToGrid="false">
-  <code><![CDATA[;;EXTENSIONS
-
-;extensions [ csv ]
-
-;;INCLUDING A NETLOGO SOURCE FILES
-;__includes["EarnedValueManagement.nls"]
-
-;;GLOBAL VARIABLES
-globals [backlog pmb-baseline plan-rows bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates board-scale]
+  <code><![CDATA[;;GLOBAL VARIABLES
+globals [backlog pmb-baseline bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates board-scale]
 
 ;;BREED DEFINITIONS
 directed-link-breed [assignments assignment]   ;; employee -> task
@@ -49,7 +42,6 @@ tasks-own [
 ;;SETUP-SECTION
 to setup
   clear-all
-  set plan-rows []
   setup-tasks
   setup-employees
   set-baseline
@@ -153,10 +145,12 @@ to-report link-text [p]
 end
 
 to setup-employees
+  let next-number 1
   create-employees employees-number [
     setxy random-xcor (random 16) - 16
     set shape "person"
-    set employee-number random 10000
+    set employee-number next-number
+    set next-number next-number + 1
     set status "Active"
     set role "Developer"
     set motivation 1.0
@@ -248,28 +242,35 @@ to the-employee-moves-assignments-to-the-in-progress-queue
 end
 
 to the-employee-achieves-and-moves-tasks-to-the-done-cue
-  ask employees [
-    ask out-assignment-neighbors with [status = "in-progress"][
-      if complete-hours < planned-hours [
-        ;; every hour worked costs one hour, whether or not it produces progress
-        set actual-hours actual-hours + 1
-        ;; with probability-of-delay the hour is lost (no progress)
-        if random-float 1 >= probability-of-delay [
-          set complete-hours complete-hours + 1
-        ]
-        ;; with probability-of-advance the task progresses an extra hour at no extra cost
-        if random-float 1 < probability-of-advance [
-          set complete-hours complete-hours + 1
-        ]
-        set complete-hours min (list complete-hours planned-hours)
+  ;; phase 1: every task in progress gets its hour of work
+  ask tasks with [status = "in-progress"][
+    if complete-hours < planned-hours [
+      ;; every hour worked costs one hour, whether or not it produces progress
+      set actual-hours actual-hours + 1
+      ;; with probability-of-delay the hour is lost (no progress)
+      if random-float 1 >= probability-of-delay [
+        set complete-hours complete-hours + 1
       ]
-      ;; completion is checked right after the work, so there is no one-tick lag
-      if complete-hours >= planned-hours and finish-allowed? [
-        set color green
-        set status "done"
-        set done-tick ticks + 1
+      ;; with probability-of-advance the task progresses an extra hour at no extra cost
+      if random-float 1 < probability-of-advance [
+        set complete-hours complete-hours + 1
       ]
+      set complete-hours min (list complete-hours planned-hours)
     ]
+  ]
+  ;; phase 2: completion is checked after all the work of the tick, so FF/SF gates do not depend on
+  ;; the order in which tasks are processed. Tasks finishing together are completed at once, and the
+  ;; check is repeated because their successors (FF with lag 0) may be allowed to finish in this tick too.
+  let finishing tasks with [status = "in-progress" and complete-hours >= planned-hours and finish-allowed?]
+  while [any? finishing] [
+    ask finishing [
+      set color green
+      set status "done"
+      set done-tick ticks + 1
+      ;; the employee is free again; dropping the link keeps the per-employee counts proportional to the active work
+      ask my-in-assignments [die]
+    ]
+    set finishing tasks with [status = "in-progress" and complete-hours >= planned-hours and finish-allowed?]
   ]
   tasks-board-update
 end
@@ -284,6 +285,7 @@ to create-team
     ]
   ]
 end
+
 
 ;; Task board: three columns of patches (to-do x -16..-6, in-progress x -5..5, done x 6..16), 17 rows each,
 ;; one card per patch. With more tasks than slots (187), board-scale cards fit along each side of a
@@ -306,13 +308,6 @@ to place-cards [cards x-min x-max]
   ]
 end
 
-;; Budget at Completion: total planned hours of all tasks
-;; Budget at Completion: total planned hours of all tasks
-;; Budget at Completion: total planned hours of all tasks
-;; Budget at Completion: total planned hours of all tasks
-;; Budget at Completion: total planned hours of all tasks
-;; Budget at Completion: total planned hours of all tasks (planned hours never change, so it is
-;; calculated once at setup, see set-baseline)
 ;; Budget at Completion: total planned hours of all tasks (planned hours never change, so it is
 ;; calculated once at setup, see set-baseline)
 to-report BAC
@@ -506,6 +501,8 @@ to-report compute-es
   if BAC <= 0 [report 0]
   let earned min (list EV BAC)
   if earned <= 0 [report 0]
+  ;; the baseline already planned that much at time 0 (for example zero-duration tasks at the start)
+  if planned-value-at 0 >= earned [report 0]
   ;; earliest time at which the baseline planned to have earned that much (binary search + interpolation)
   let lo 0
   let hi PMB-Duration
@@ -527,7 +524,8 @@ end
 ;; Unlike PMB / SPI, this equals the real duration once the project finishes.
 to-report EACt
   ifelse SPIt > 0 [report PMB-Duration / SPIt][report "n/a"]
-end]]></code>
+end
+]]></code>
   <widgets>
     <view x="315" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-16" height="451" showTickCounter="true" patchSize="13.55" fontSize="10" wrappingAllowedY="false" width="451" tickCounterLabel="ticks" maxPycor="16" updateMode="0" maxPxcor="16" minPxcor="-16"></view>
     <button x="0" y="285" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="95" display="setup">setup</button>
