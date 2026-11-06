@@ -8,7 +8,7 @@ extensions [ csv ]
 __includes["EarnedValueManagement.nls"]
 
 ;;GLOBAL VARIABLES
-globals [backlog pmb-baseline plan-rows]
+globals [backlog pmb-baseline plan-rows bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates]
 
 ;;BREED DEFINITIONS
 directed-link-breed [assignments assignment]   ;; employee -> task
@@ -314,7 +314,10 @@ to schedule-random-plan
         ]
       ]
     ]
-    set t t + 1
+    ;; nothing can change before the next running task finishes (a slot frees up or a successor
+    ;; becomes ready), so jump straight to that tick
+    let running tasks with [start-tick >= 0 and finish-tick > t]
+    ifelse any? running [set t min [finish-tick] of running][set t t + 1]
   ]
 end
 
@@ -384,14 +387,12 @@ to the-employee-picks-tasks-from-the-to-do-backlog
       ]
     ]
   ]
-  tasks-board-update
 end
 
 ;; First task of the backlog (creation order) whose predecessors are all done, or nobody.
 to-report next-ready-task
-  if empty? backlog [report nobody]
-  let ready filter [t -> [ready?] of t] backlog
-  report ifelse-value empty? ready [nobody][first ready]
+  foreach backlog [ t -> if [ready?] of t [report t] ]
+  report nobody
 end
 
 ;; task context: finish-to-start dependencies. A task is ready when every predecessor link holds.
@@ -414,7 +415,6 @@ to the-employee-moves-assignments-to-the-in-progress-queue
         set status "in-progress"
     ]
   ]
-  tasks-board-update
 end
 
 to the-employee-achieves-and-moves-tasks-to-the-done-cue

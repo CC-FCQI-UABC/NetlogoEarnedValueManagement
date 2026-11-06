@@ -1,6 +1,7 @@
-;; Budget at Completion: total planned hours of all tasks
+;; Budget at Completion: total planned hours of all tasks (planned hours never change, so it is
+;; calculated once at setup, see set-baseline)
 to-report BAC
-  report sum [planned-hours] of tasks
+  report bac-total
 end
 
 ;; Performance Measurement Baseline duration (in ticks). Frozen at setup (see set-baseline)
@@ -12,36 +13,93 @@ end
 ;; Called once at the end of setup: the baseline duration is the planned finish
 ;; (in ticks) of the last task of the plan.
 to set-baseline
+  set bac-total sum [planned-hours] of tasks
+  set cache-tick -1
+  set cache-es-tick -1
   ifelse any? tasks
     [set pmb-baseline max [finish-tick] of tasks]
     [set pmb-baseline 0]
+  build-pv-curve
 end
 
-;; Planned value accumulated by time t: every task earns its planned hours linearly
-;; between its planned start and finish.
+;; The baseline planned value is piecewise linear in time: every task earns its planned hours
+;; linearly between its planned start and finish (a task with no duration earns them at its finish).
+;; It is built once at setup as sorted events [tick, value after the event, earning rate after the
+;; event], so that the planned value at any time is a binary search instead of a sum over all tasks.
+to build-pv-curve
+  set pv-event-ticks []
+  set pv-event-values []
+  set pv-event-rates []
+  if not any? tasks [stop]
+  let events reduce [[a b] -> sentence a b] [task-pv-events] of tasks
+  set events sort-by [[a b] -> first a < first b] events
+  let value 0
+  let rate 0
+  let last-tick first first events
+  foreach events [ event ->
+    let tk first event
+    set value value + rate * (tk - last-tick) + item 2 event
+    set rate rate + item 1 event
+    set last-tick tk
+    set pv-event-ticks lput tk pv-event-ticks
+    set pv-event-values lput value pv-event-values
+    set pv-event-rates lput rate pv-event-rates
+  ]
+end
+
+;; task context: events [tick rate-change jump]
+to-report task-pv-events
+  ifelse finish-tick > start-tick [
+    let rate planned-hours / (finish-tick - start-tick)
+    report (list (list start-tick rate 0) (list finish-tick (- rate) 0))
+  ][
+    report (list (list finish-tick 0 planned-hours))
+  ]
+end
+
+;; Planned value accumulated by time t
 to-report planned-value-at [t]
-  if BAC <= 0 or PMB-Duration <= 0 [report 0]
-  report sum [task-planned-value-at t] of tasks
+  if bac-total <= 0 or empty? pv-event-ticks [report 0]
+  if t < first pv-event-ticks [report 0]
+  ;; last event at or before t
+  let lo 0
+  let hi (length pv-event-ticks) - 1
+  while [lo < hi] [
+    let mid ceiling ((lo + hi) / 2)
+    ifelse item mid pv-event-ticks <= t [set lo mid][set hi mid - 1]
+  ]
+  report min (list bac-total ((item lo pv-event-values) + (item lo pv-event-rates) * (t - item lo pv-event-ticks)))
 end
 
-;; task context
-to-report task-planned-value-at [t]
-  if finish-tick <= start-tick [report ifelse-value t >= finish-tick [planned-hours][0]]
-  report planned-hours * max (list 0 min (list 1 ((t - start-tick) / (finish-tick - start-tick))))
+;; EV, AC and PV are used by many monitors, plots and derived reporters, so they are summed once
+;; per tick and cached. The state only changes inside go, before the tick.
+to refresh-evm-cache
+  if cache-tick != ticks [
+    set cache-ev sum [complete-hours] of tasks
+    set cache-ac sum [actual-hours] of tasks
+    set cache-pv planned-value-at ticks
+    set cache-tick ticks
+  ]
 end
 
 to-report PV
-  report planned-value-at ticks
+  if bac-total <= 0 [report 0]
+  refresh-evm-cache
+  report cache-pv
 end
 
 ;; Actual Cost: hours actually spent on tasks
 to-report AC
-  report sum [actual-hours] of tasks
+  if bac-total <= 0 [report 0]
+  refresh-evm-cache
+  report cache-ac
 end
 
 ;; Earned Value: planned hours of the work actually accomplished
 to-report EV
-  report sum [complete-hours] of tasks
+  if bac-total <= 0 [report 0]
+  refresh-evm-cache
+  report cache-ev
 end
 
 to-report PV%
@@ -120,6 +178,16 @@ end
 
 ;; Earned Schedule: the time at which the baseline planned to have earned the current EV
 to-report ES
+  if bac-total <= 0 [report 0]
+  refresh-evm-cache
+  if cache-es-tick != ticks [
+    set cache-es compute-es
+    set cache-es-tick ticks
+  ]
+  report cache-es
+end
+
+to-report compute-es
   if BAC <= 0 [report 0]
   let earned min (list EV BAC)
   if earned <= 0 [report 0]
