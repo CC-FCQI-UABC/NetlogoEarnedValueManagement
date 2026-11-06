@@ -39,7 +39,9 @@ tasks-own [
   actual-hours
   start-tick          ;; planned start / finish in working hours since project start (dated plan only)
   finish-tick
-  predecessor-tasks   ;; agentset of tasks that must be done first (dependencies only)
+  predecessor-tasks   ;; agentset of tasks that must be done first
+  predecessor-links   ;; list of [predecessor-task lag-in-hours] pairs
+  done-tick           ;; tick at which the task was completed
 ]
 
 
@@ -92,6 +94,7 @@ to read-csv
         set start-tick parse-plan-tick item 8 data
         set finish-tick parse-plan-tick item 9 data
         set predecessor-tasks no-turtles
+        set predecessor-links []
         set complete-hours 0
         set actual-hours 0]
     ]
@@ -123,6 +126,7 @@ to setup-tasks
       set start-tick -1
       set finish-tick -1
       set predecessor-tasks no-turtles
+      set predecessor-links []
       set complete-hours 0
       set actual-hours 0]
     assign-random-predecessors
@@ -168,11 +172,47 @@ to-report business-days-before [dn]
   report 5 * q + min (list 5 r)
 end
 
-;; ids in the predecessor field of a plan row (relation type and lag, e.g. "29FS-11.25 days", are ignored)
-to-report predecessor-ids [row]
+;; Parses one predecessor of a plan row, such as "29" or "29FS-11.25 days", into [id lag-in-hours].
+;; The lag is added to a finish-to-start link (negative = lead). Other relation types are treated as
+;; finish-to-start. The lag unit defaults to days (8 working hours), like MS Project.
+to-report parse-predecessor [token]
+  let id leading-number token
+  if id < 0 [report []]
+  let rest substring token (length (word id)) (length token)
+  if length rest >= 2 and member? (substring rest 0 2) ["FS" "SS" "FF" "SF"] [
+    set rest substring rest 2 (length rest)
+  ]
+  let lag 0
+  if length rest > 0 [
+    let parts split-on rest " "
+    let amount-text first parts
+    if first amount-text = "+" [set amount-text but-first amount-text]
+    let amount ifelse-value number-text? amount-text [read-from-string amount-text][0]
+    if is-number? amount [
+      let unit-hours 8
+      if length parts > 1 and length item 1 parts > 0 [
+        let unit first item 1 parts
+        if unit = "h" [set unit-hours 1]
+        if unit = "m" [set unit-hours 1 / 60]
+        if unit = "w" [set unit-hours 40]
+        if unit = "%" [set unit-hours 0]
+      ]
+      set lag amount * unit-hours
+    ]
+  ]
+  report (list id lag)
+end
+
+;; true if s is a plain decimal number such as "-11.25"
+to-report number-text? [s]
+  report length s > 0 and length filter [ch -> not member? ch "0123456789.-"] n-values length s [i -> item i s] = 0
+end
+
+;; [id lag] pairs in the predecessor field of a plan row
+to-report predecessor-specs [row]
   let spec item 12 row
   if spec = "" [report []]
-  report filter [id -> id >= 0] map [x -> leading-number x] split-on (word spec) ","
+  report filter [s -> not empty? s] map [x -> parse-predecessor x] split-on (word spec) ","
 end
 
 ;; split string s at every occurrence of the one-character string sep
@@ -203,18 +243,22 @@ to-report leading-number [s]
   report ifelse-value digits = "" [-1][read-from-string digits]
 end
 
-;; Tasks that must precede the given plan ids. Plan rows that are not tasks of the model
-;; (summary rows, milestones) are skipped, and their own predecessors are inherited.
-to-report resolve-predecessors [ids]
-  let result no-turtles
-  foreach ids [ id ->
+;; [task lag] pairs for the given [id lag] specs. Plan rows that are not tasks of the model
+;; (summary rows, milestones) are skipped, and their own predecessors are inherited (lags add up).
+to-report resolve-predecessors [specs]
+  let result []
+  foreach specs [ spec ->
+    let id first spec
+    let lag last spec
     let t one-of tasks with [task-number = id]
     ifelse t != nobody [
-      set result (turtle-set result t)
+      set result lput (list t lag) result
     ][
       let rows filter [r -> item 2 r = id] plan-rows
       if not empty? rows [
-        set result (turtle-set result resolve-predecessors predecessor-ids first rows)
+        foreach resolve-predecessors predecessor-specs first rows [ inner ->
+          set result lput (list (first inner) (lag + last inner)) result
+        ]
       ]
     ]
   ]
@@ -228,8 +272,7 @@ to finish-plan
     set start-tick start-tick - origin
     set finish-tick finish-tick - origin
     let me task-number
-    set predecessor-tasks resolve-predecessors predecessor-ids first filter [r -> item 2 r = me] plan-rows
-    set predecessor-tasks other predecessor-tasks
+    set-predecessors resolve-predecessors predecessor-specs first filter [r -> item 2 r = me] plan-rows
   ]
 end
 
@@ -238,13 +281,14 @@ end
 to assign-random-predecessors
   ask tasks [
     let my-who who
-    set predecessor-tasks no-turtles
+    let chosen no-turtles
     if random-float 1 < dependency-probability [
       let earlier tasks with [who < my-who]
       if any? earlier [
-        set predecessor-tasks n-of (min (list (1 + random 3) count earlier)) earlier
+        set chosen n-of (min (list (1 + random 3) count earlier)) earlier
       ]
     ]
+    set-predecessors map [p -> (list p 0)] sort chosen
   ]
 end
 
@@ -272,6 +316,26 @@ to schedule-random-plan
     ]
     set t t + 1
   ]
+end
+
+;; task context: pairs is a list of [predecessor-task lag-in-hours]
+to set-predecessors [pairs]
+  set predecessor-links filter [p -> first p != self] pairs
+  set predecessor-tasks turtle-set map [p -> first p] predecessor-links
+end
+
+;; task context: task numbers of the predecessors separated by spaces, each followed by
+;; "@<lag>h" when it has a lag
+to-report predecessor-numbers
+  let items map [p -> link-text p] predecessor-links
+  report ifelse-value empty? items [""] [reduce [[a b] -> (word a " " b)] items]
+end
+
+;; text of one predecessor link: the task number, plus "@<lag>h" when it has a lag
+to-report link-text [p]
+  let pred-number [task-number] of (first p)
+  let lag (last p)
+  report ifelse-value (lag = 0) [(word pred-number)] [(word pred-number "@" lag "h")]
 end
 
 to setup-employees
@@ -330,9 +394,17 @@ to-report next-ready-task
   report ifelse-value empty? ready [nobody][first ready]
 end
 
-;; task context: finish-to-start dependencies (relation type and lag from the plan are ignored)
+;; task context: finish-to-start dependencies. A task is ready when every predecessor link holds.
 to-report ready?
-  report not any? predecessor-tasks with [status != "done"]
+  report empty? filter [p -> not link-satisfied? (first p) (last p)] predecessor-links
+end
+
+;; A positive lag waits that many ticks after the predecessor is done. A negative lag (lead)
+;; lets the task start once the predecessor has at most |lag| hours of work left.
+to-report link-satisfied? [pred lag]
+  report ifelse-value lag >= 0
+    [[status] of pred = "done" and ticks >= [done-tick] of pred + lag]
+    [[complete-hours] of pred >= [planned-hours] of pred + lag]
 end
 
 to the-employee-moves-assignments-to-the-in-progress-queue
@@ -365,6 +437,7 @@ to the-employee-achieves-and-moves-tasks-to-the-done-cue
       if complete-hours >= planned-hours [
         set color green
         set status "done"
+        set done-tick ticks + 1
       ]
     ]
   ]
@@ -393,17 +466,13 @@ to write-tasks-to-csv
   csv:to-file "output/tasks.csv" fput header rows
 end
 
-;; task context: task numbers of the predecessors, separated by spaces
-to-report predecessor-numbers
-  let ids sort [task-number] of predecessor-tasks
-  report ifelse-value empty? ids [""] [reduce [[a b] -> (word a " " b)] ids]
-end
-
-; procedure to write some turtle properties to a file
+; procedure to write the employees to a CSV file (one row per employee, with a header)
 to write-employees-to-csv
   ; we use the `of` primitive to make a list of lists and then
   ; use the csv extension to write that list of lists to a file.
-  csv:to-file "output/employees.csv" [ (list  employee-number status role motivation) ] of employees
+  let header (list "employee-number" "status" "role" "motivation")
+  let rows map [emp -> [ (list employee-number status role motivation) ] of emp] sort-on [who] employees
+  csv:to-file "output/employees.csv" fput header rows
 end
 
 to tasks-board-update
@@ -693,8 +762,8 @@ Random tasks (default). With probability dependency-probability each task gets 1
 MS Project CSV (Software-Development-Plan.csv, desktop version, load-file switch):
 
   * Dates: each task's planned start and finish are converted to working hours (8 hours per business day, 8:00-12:00 and 1:00-5:00, weekends skipped; 1 tick = 1 working hour), counted from the earliest start. PV is then the sum, over all tasks, of the planned hours earned linearly between each task's start and finish, and PMB-Duration is the planned finish of the last task. ES is found by searching that curve for the time at which PV equals the current EV.
-  * Dependencies: a task can only be picked up once all its predecessors are done (finish-to-start). The relation type and lag of the plan (for example "FS-11.25 days") are ignored. Summary rows and milestones are not tasks of the model, so a task that depends on one inherits that row's own predecessors.
-  * Resource names in the plan are ignored: any employee can pick any task.
+  * Dependencies: a task can only be picked up once all its predecessors are done (finish-to-start). The lag or lead of a link in the plan (for example "FS-11.25 days") is honoured: a lead lets the task start once its predecessor has at most that much work left (11.25 days = 90 hours). Other relation types are treated as finish-to-start. Summary rows and milestones are not tasks of the model, so a task that depends on one inherits that row's own predecessors.
+  * Resource names in the plan are ignored: any employee can pick any task. The plan's dates assume its own resources, so with the plan loaded the simulated project can still differ slightly from the baseline even with no delay or advance (about 1.5% in the sample plan with the default 3 employees).
 
 When a ratio has no data yet, SPI and CPI show the neutral value 1, SV%, CV% and VAC% show 0, and TCPI and EAC2 show "n/a" if they are undefined.
 
@@ -1651,7 +1720,7 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
         <metric>PMB-Duration</metric>
         <metric>count tasks</metric>
         <metric>count tasks with [status = "done"]</metric>
-        <metric>count tasks with [status != "to-do" and any? predecessor-tasks with [status != "done"]]</metric>
+        <metric>count tasks with [status != "to-do" and not ready?]</metric>
       </metrics>
       <constants>
         <enumeratedValueSet variable="load-file">
@@ -1688,11 +1757,17 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
         <metric>PMB-Duration</metric>
         <metric>count tasks</metric>
         <metric>count tasks with [status = "done"]</metric>
-        <metric>count tasks with [status != "to-do" and any? predecessor-tasks with [status != "done"]]</metric>
+        <metric>count tasks with [status != "to-do" and not ready?]</metric>
       </metrics>
       <constants>
         <enumeratedValueSet variable="load-file">
           <value value="true"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-delay">
+          <value value="0"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-advance">
+          <value value="0"></value>
         </enumeratedValueSet>
       </constants>
     </experiment>

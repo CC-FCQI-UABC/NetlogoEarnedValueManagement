@@ -7,17 +7,17 @@ NETLOGO_HOME defaults to $NETLOGO_HOME or "/Applications/NetLogo 7.0.4".
 Checks, for every run of "regression-no-delay" (random tasks, delay = advance = 0) in the
 desktop and the web models:
   * all tasks end up done,
-  * no task is ever started/finished while one of its predecessors is not done,
+  * no task is ever started while its predecessors (including lags) are not satisfied,
   * the real duration is close to the planned one (PMB-Duration). It is not always exactly
     equal: an employee picks one task per tick, and greedy scheduling can react to that.
-and, for "regression-plan-csv" (MS Project plan, desktop only), the first two checks.
+and the same for "regression-plan-csv" (MS Project plan, desktop only, with its lags and leads).
 """
 import collections, csv, os, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("NETLOGO_HOME", "/Applications/NetLogo 7.0.4")
 DONE = 'count tasks with [status = "done"]'
-VIOL = 'count tasks with [status != "to-do" and any? predecessor-tasks with [status != "done"]]'
+VIOL = 'count tasks with [status != "to-do" and not ready?]'
 
 
 def run(model, experiment):
@@ -53,7 +53,7 @@ def check(model, experiment, planned_close):
 
 failures = []
 failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-no-delay", True)
-failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-plan-csv", False)
+failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-plan-csv", True)
 failures += check("NetlogoEarnedValueManagementWebV1.1.nlogox", "regression-no-delay", True)
 for f in failures:
     print("FAIL", f)
