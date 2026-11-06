@@ -14,6 +14,7 @@ task board, while tasks can be delayed or advanced at random.
 | `NetlogoEarnedValueManagementWebV1.1.nlogox` | Version for NetLogo Web: random tasks only, EVM code inlined (no `__includes`, no CSV extension). |
 | `EarnedValueManagement.nls` | EVM reporters (BAC, PV, EV, AC, SPI, CPI, TCPI, EAC, ES, EACt...) included by the desktop model. |
 | `input/Software-Development-Plan.csv` | Sample plan exported from MS Project (61 tasks with dates and predecessors). |
+| `input/Plan-link-types.csv` | Small demo plan with one link of each type (SS, FF, FS with a percentage lag, SF, FS with a lag). |
 | `output/` | Sample output of `Write tasks to tasks.csv` / `Write employees to employees.csv`. |
 | `tests/check_regression.py` | Headless regression checks (see below). |
 | `Software Development Plan/`, `EVM Tools/` | The original MS Project plan and EVM calculators used as references. |
@@ -45,11 +46,14 @@ each task earns its planned hours linearly between its start and finish, and
   predecessors among the tasks created before it. The plan comes from an ideal run with no
   delay or advance and `employees-number * assigned-tasks-employee` parallel slots.
 - **MS Project CSV**: dates are converted to working hours (8 h per business day,
-  8:00-12:00 and 1:00-5:00, no weekends) and predecessors are read as finish-to-start with
-  their lag or lead (for example `FS-11.25 days`: the task may start once its predecessor has
-  90 hours of work left). Other relation types are treated as finish-to-start and the
-  resource names are ignored, so the simulated project can still differ slightly from the
-  plan (about 1.5% in the sample plan with no delay or advance).
+  8:00-12:00 and 1:00-5:00, no weekends). The four relation types are supported, each with a lag
+  or lead in days, hours, weeks or minutes, or as a percentage of the predecessor's duration:
+  `FS` and `SS` gate the start of the task (after the predecessor finishes or starts), `FF` and
+  `SF` gate its completion (the task can work, but cannot finish before the predecessor finishes
+  or starts). A lead on `FS`/`FF` (for example `FS-11.25 days`) holds once the predecessor has
+  that many hours of work left. Resource names are ignored, so any employee can pick any task,
+  and the simulated project can still differ slightly from the plan (about 1.6% in the sample
+  plan with no delay or advance). Choose the plan with the `plan-file` chooser.
 
 The Info tab of the model documents every metric and formula.
 
@@ -63,8 +67,8 @@ Both files have a header row and are written to `output/`.
 
 ## Tests
 
-`tests/check_regression.py` runs the `regression-no-delay` and `regression-plan-csv`
-BehaviorSpace experiments of the models headless and checks that all tasks finish, that no
+`tests/check_regression.py` runs the `regression-no-delay`, `regression-plan-csv` and
+`regression-link-types` BehaviorSpace experiments of the models headless and checks that all tasks finish, that no
 task starts before its predecessors are done, and that, with no delay or advance, the real
 duration is close to the planned one.
 

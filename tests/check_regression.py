@@ -10,7 +10,9 @@ desktop and the web models:
   * no task is ever started while its predecessors (including lags) are not satisfied,
   * the real duration is close to the planned one (PMB-Duration). It is not always exactly
     equal: an employee picks one task per tick, and greedy scheduling can react to that.
-and the same for "regression-plan-csv" (MS Project plan, desktop only, with its lags and leads).
+and the same for "regression-plan-csv" (MS Project plan, desktop only, with its lags and leads) and
+"regression-link-types" (input/Plan-link-types.csv: one link each of type SS, FF, FS with a percentage lag,
+SF and FS with a lag; the ideal run must reproduce the plan to within a tick).
 """
 import collections, csv, os, subprocess, sys, tempfile
 
@@ -18,6 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("NETLOGO_HOME", "/Applications/NetLogo 7.0.4")
 DONE = 'count tasks with [status = "done"]'
 VIOL = 'count tasks with [status != "to-do" and not ready?]'
+FINV = 'count tasks with [finish-violation?]'
 
 
 def run(model, experiment):
@@ -34,7 +37,7 @@ def run(model, experiment):
     return runs
 
 
-def check(model, experiment, planned_close):
+def check(model, experiment, planned_close, abs_tol=5):
     failures = []
     runs = run(model, experiment)
     for run_id, steps in runs.items():
@@ -42,10 +45,12 @@ def check(model, experiment, planned_close):
         if last[DONE] != last["count tasks"]:
             failures.append(f"{model} {experiment} run {run_id}: {last[DONE]}/{last['count tasks']} tasks done")
         if any(int(s[VIOL]) for s in steps):
-            failures.append(f"{model} {experiment} run {run_id}: precedence violated")
+            failures.append(f"{model} {experiment} run {run_id}: a task started before its start-gate links held")
+        if any(int(s[FINV]) for s in steps):
+            failures.append(f"{model} {experiment} run {run_id}: a task finished before its finish-gate links held")
         if planned_close:
             planned, real = float(last["PMB-Duration"]), float(last["ticks"])
-            if abs(real - planned) > max(5, 0.03 * planned):
+            if abs(real - planned) > max(abs_tol, 0.03 * planned):
                 failures.append(f"{model} {experiment} run {run_id}: ticks {real:g} vs planned {planned:g}")
     print(f"{model} {experiment}: {len(runs)} runs, {len(failures)} failures")
     return failures
@@ -54,6 +59,8 @@ def check(model, experiment, planned_close):
 failures = []
 failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-no-delay", True)
 failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-plan-csv", True)
+# demo plan with one link of each type (SS, FF, FS+%, SF, FS+days): ideal run = plan, to the tick
+failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-link-types", True, abs_tol=1)
 failures += check("NetlogoEarnedValueManagementWebV1.1.nlogox", "regression-no-delay", True)
 for f in failures:
     print("FAIL", f)

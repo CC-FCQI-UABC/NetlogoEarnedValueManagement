@@ -40,7 +40,8 @@ tasks-own [
   start-tick          ;; planned start / finish in working hours since project start (dated plan only)
   finish-tick
   predecessor-tasks   ;; agentset of tasks that must be done first
-  predecessor-links   ;; list of [predecessor-task lag-in-hours] pairs
+  predecessor-links   ;; list of [predecessor-task lag-in-hours type] links, type = FS, SS, FF or SF
+  started-tick        ;; tick at which the task was moved to in-progress
   done-tick           ;; tick at which the task was completed
 ]
 
@@ -97,7 +98,7 @@ to assign-random-predecessors
         set chosen n-of (min (list (1 + random 3) count earlier)) earlier
       ]
     ]
-    set-predecessors map [p -> (list p 0)] sort chosen
+    set-predecessors map [p -> (list p 0 "FS")] sort chosen
   ]
 end
 
@@ -130,7 +131,7 @@ to schedule-random-plan
   ]
 end
 
-;; task context: pairs is a list of [predecessor-task lag-in-hours]
+;; task context: pairs is a list of [predecessor-task lag-in-hours type] links
 to set-predecessors [pairs]
   set predecessor-links filter [p -> first p != self] pairs
   set predecessor-tasks turtle-set map [p -> first p] predecessor-links
@@ -143,11 +144,12 @@ to-report predecessor-numbers
   report ifelse-value empty? items [""] [reduce [[a b] -> (word a " " b)] items]
 end
 
-;; text of one predecessor link: the task number, plus "@<lag>h" when it has a lag
+;; text of one predecessor link: task number, relation type unless FS, and "@<lag>h" when it has a lag
 to-report link-text [p]
-  let pred-number [task-number] of (first p)
-  let lag (last p)
-  report ifelse-value (lag = 0) [(word pred-number)] [(word pred-number "@" lag "h")]
+  let text (word [task-number] of (item 0 p))
+  if item 2 p != "FS" [set text (word text item 2 p)]
+  if item 1 p != 0 [set text (word text "@" item 1 p "h")]
+  report text
 end
 
 to setup-employees
@@ -204,17 +206,35 @@ to-report next-ready-task
   report nobody
 end
 
-;; task context: finish-to-start dependencies. A task is ready when every predecessor link holds.
+;; task context: start gate. A task is ready when every FS and SS link holds.
 to-report ready?
-  report empty? filter [p -> not link-satisfied? (first p) (last p)] predecessor-links
+  report empty? filter [p -> member? (item 2 p) ["FS" "SS"] and not link-satisfied? (item 0 p) (item 1 p) (item 2 p) ticks] predecessor-links
 end
 
-;; A positive lag waits that many ticks after the predecessor is done. A negative lag (lead)
-;; lets the task start once the predecessor has at most |lag| hours of work left.
-to-report link-satisfied? [pred lag]
-  report ifelse-value lag >= 0
-    [[status] of pred = "done" and ticks >= [done-tick] of pred + lag]
-    [[complete-hours] of pred >= [planned-hours] of pred + lag]
+;; task context: finish gate. A task may only complete when every FF and SF link holds at the tick
+;; it would finish (ticks + 1).
+to-report finish-allowed?
+  report empty? filter [p -> member? (item 2 p) ["FF" "SF"] and not link-satisfied? (item 0 p) (item 1 p) (item 2 p) (ticks + 1)] predecessor-links
+end
+
+;; task context: true if the task is done although a finish-gate link was not satisfied when it finished
+to-report finish-violation?
+  report status = "done" and not empty? filter [p -> member? (item 2 p) ["FF" "SF"] and not link-satisfied? (item 0 p) (item 1 p) (item 2 p) done-tick] predecessor-links
+end
+
+;; Is the link to predecessor pred satisfied at time now?
+;; - FS and FF follow the predecessor's finish: a positive lag waits that many ticks after it is
+;;   done; a negative lag (lead) holds once it has at most |lag| hours of work left.
+;; - SS and SF follow the predecessor's start: it must have started, lag ticks ago (a negative lag
+;;   cannot make a task precede its predecessor, so it holds once the predecessor has started).
+to-report link-satisfied? [pred lag kind now]
+  ifelse member? kind ["FS" "FF"] [
+    report ifelse-value lag >= 0
+      [[status] of pred = "done" and now >= [done-tick] of pred + lag]
+      [[complete-hours] of pred >= [planned-hours] of pred + lag]
+  ][
+    report [status] of pred != "to-do" and now >= [started-tick] of pred + lag
+  ]
 end
 
 to the-employee-moves-assignments-to-the-in-progress-queue
@@ -222,6 +242,7 @@ to the-employee-moves-assignments-to-the-in-progress-queue
     ask out-assignment-neighbors with [status = "to-do"][
         set color yellow
         set status "in-progress"
+        set started-tick ticks
     ]
   ]
 end
@@ -243,7 +264,7 @@ to the-employee-achieves-and-moves-tasks-to-the-done-cue
         set complete-hours min (list complete-hours planned-hours)
       ]
       ;; completion is checked right after the work, so there is no one-tick lag
-      if complete-hours >= planned-hours [
+      if complete-hours >= planned-hours and finish-allowed? [
         set color green
         set status "done"
         set done-tick ticks + 1
@@ -742,7 +763,7 @@ Random tasks (default). With probability dependency-probability each task gets 1
 MS Project CSV (Software-Development-Plan.csv, desktop version, load-file switch):
 
   * Dates: each task's planned start and finish are converted to working hours (8 hours per business day, 8:00-12:00 and 1:00-5:00, weekends skipped; 1 tick = 1 working hour), counted from the earliest start. PV is then the sum, over all tasks, of the planned hours earned linearly between each task's start and finish, and PMB-Duration is the planned finish of the last task. ES is found by searching that curve for the time at which PV equals the current EV.
-  * Dependencies: a task can only be picked up once all its predecessors are done (finish-to-start). The lag or lead of a link in the plan (for example "FS-11.25 days") is honoured: a lead lets the task start once its predecessor has at most that much work left (11.25 days = 90 hours). Other relation types are treated as finish-to-start. Summary rows and milestones are not tasks of the model, so a task that depends on one inherits that row's own predecessors.
+  * Dependencies: a task can only be picked up once all its predecessors are done (finish-to-start). The lag or lead of a link in the plan (for example "FS-11.25 days") is honoured: a lead lets the task start once its predecessor has at most that much work left (11.25 days = 90 hours). The relation types FS, SS, FF and SF are supported: FS and SS gate the start of the task (after the predecessor finishes or starts, plus the lag), FF and SF gate its completion (the task works normally but cannot finish before the predecessor finishes or starts, plus the lag). A lag may be in days, hours, weeks or minutes, or a percentage of the predecessor's duration (for example "FS+50%"). Summary rows and milestones are not tasks of the model, so a task that depends on one inherits that row's own predecessors.
   * Resource names in the plan are ignored: any employee can pick any task. The plan's dates assume its own resources, so with the plan loaded the simulated project can still differ slightly from the baseline even with no delay or advance (about 1.5% in the sample plan with the default 3 employees).
 
 When a ratio has no data yet, SPI and CPI show the neutral value 1, SV%, CV% and VAC% show 0, and TCPI and EAC2 show "n/a" if they are undefined.
@@ -1695,6 +1716,7 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
         <metric>count tasks</metric>
         <metric>count tasks with [status = "done"]</metric>
         <metric>count tasks with [status != "to-do" and not ready?]</metric>
+        <metric>count tasks with [finish-violation?]</metric>
       </metrics>
       <constants>
         <enumeratedValueSet variable="number-of-tasks">
