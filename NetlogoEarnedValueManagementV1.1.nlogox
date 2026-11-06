@@ -136,8 +136,23 @@ to setup-tasks
       set actual-hours 0]
   ]
 
-  set backlog sort-on [priority * 100000 + who] tasks
+  set backlog sort-by [[a b] -> earlier-in-backlog? a b] tasks
   tasks-board-update
+end
+
+;; Backlog order, set by the priority-order chooser: "lowest-first" (1 is most urgent, the default)
+;; or "highest-first" (e.g. MS Project, where 1000 is most urgent). Ties, and non-numeric
+;; priorities (treated as 0), are broken by creation order.
+to-report earlier-in-backlog? [a b]
+  let sign ifelse-value priority-order = "highest-first" [-1][1]
+  let pa sign * [numeric-priority] of a
+  let pb sign * [numeric-priority] of b
+  report pa < pb or (pa = pb and [who] of a < [who] of b)
+end
+
+;; task context: priority as a number, or 0 if the source data had none
+to-report numeric-priority
+  report ifelse-value is-number? priority [priority][0]
 end
 
 to setup-employees
@@ -159,8 +174,8 @@ to go
     stop
   ]
   processing-the-tasks
+  tick  ;; tick before the stop check so the final state reaches the plots
   if count tasks with [color = green] = count tasks [stop]
-  tick
 end
 
 ;;PROCEDURES SECTION
@@ -410,6 +425,10 @@ end]]></code>
       <choice type="string" value="input/Software-Development-Plan.csv"></choice>
     </chooser>
     <switch x="0" y="705" height="40" on="false" variable="load-file" width="109" display="load-file"></switch>
+    <chooser x="112" y="705" height="40" variable="priority-order" current="0" width="165" display="priority-order">
+      <choice type="string" value="lowest-first"></choice>
+      <choice type="string" value="highest-first"></choice>
+    </chooser>
     <slider x="0" step="0.01" y="175" max="1" width="275" display="probability-of-advance" height="50" min="0" direction="Horizontal" default="0.2" variable="probability-of-advance"></slider>
     <button x="0" y="750" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="277" display="Write tasks to tasks.csv">write-tasks-to-csv</button>
     <plot x="1074" autoPlotX="true" yMax="1.0" autoPlotY="true" y="402" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="0.0" width="275" display="Cost Performance Index at Conclusion">
@@ -436,7 +455,7 @@ The model aims to illustrate how Earned Vaue Management (EVM) provides an approa
 
 Specifically, we are addressing the following questions: How does the risk of execution delay or advance impact cost and schedule performance? How do the players' number or individual work capacity impact cost and schedule estimations to finish? Regardless of why workers cause delays or produce overruns in their assignments, does EVM assess delivery performance and help make objective decisions? 
 
-To consider our model realistic enough for its purpose, we use the following patterns: The model addresses classic problems of Project Management (PM). It plays the typical task board where workers are assigned to complete a task backlog in project performance. Workers could delay or advance in the task execution, and we calculate the performance using the PMI-recommended Earned Value. 
+To consider our model realistic enough for its purpose, we use the following patterns: The model addresses classic problems of Project Management (PM). It plays the typical task board where workers are assigned to complete a task backlog in project performance. Workers could lose an hour of progress (delay) or gain an extra one (advance) while executing a task, and we calculate the performance using the PMI-recommended Earned Value. 
 
 
 ## HOW IT WORKS
@@ -444,7 +463,7 @@ The model includes the following entities: task and employee. The workspaces and
 
 In the model, agents represent employees executing tasks in a simple, agile production system. Each agent takes a job from the backlog and performs it in the set time. The interface displays employees and tasks on a Kanban-like task board. To-do tasks are in the red card column, jobs in progress are in the yellow card column, and completed tasks are in the green card column.
 
-The most critical processes of the model, which are repeated every time step, are: firstly, the employee picks tasks from the to-do backlog. Then the employee moves assignments to the in-progress queue. Finally, the employee achieves and carries tasks to the done cue.
+The most critical processes of the model, which are repeated every time step, are: firstly, the employee picks the next task from the to-do backlog (ordered by priority, then by creation order; the priority-order chooser selects whether the lowest or the highest priority value is picked first). Then the employee moves assignments to the in-progress queue. Finally, the employee achieves and carries tasks to the done cue.
 
 The most important design concepts of the model are a task backlog, a task board, players (or employees), a cost and schedule plan, and performance metrics.
 
@@ -452,7 +471,7 @@ The most important design concepts of the model are a task backlog, a task board
 
   2. The players or employees must take as many as permitted tasks from the "to-do" queue and deliver them to the "done" cue in the panel. While a player is working on an assignment, he must keep the assignment tag in the "in-progress" column.
 
-  3. The cost and schedule plan has a task-planned cost in hours and start-finish time, but the worker could delay or advance in completing the job, or environmental situations could increase and decrease the final cost.
+  3. The cost and schedule plan has a task-planned cost in hours and start-finish time, but the worker could delay or advance in completing the job. Every hour worked costs one hour (Actual Cost), whether or not it produces progress. With probability-of-delay the hour is lost (no progress); with probability-of-advance the task progresses one extra hour at no extra cost. So delay raises cost and stretches the schedule, while advance improves both.
   
   4. The performance metrics are the Earned Value Management metrics that estimate the project performance.
 
@@ -465,7 +484,7 @@ EVM consists of the following primary and derived data elements. Each data point
 
 #### Main values
 
-  * Planned Value, PV.
+  * Planned Value, PV: a time-phased linear baseline, BAC * min(1, ticks / PMB-Duration).
   * Earned Value, EV.
   * Actual Cost, AC.
   * Budget at Completion, BAC.
@@ -507,8 +526,8 @@ To Complete Performance Index, TCPI.
 
 Estimate at Completion, EAC. 
 
-  * EAC = BAC – SV
-  * EAC = BAC / CPI
+  * EAC = BAC – CV = BAC – EV + AC (reported as EAC1: remaining work done at the budgeted rate)
+  * EAC = BAC / CPI (reported as EAC2: current cost performance continues)
   * EAC = BAC / (CPI * SPI)
   * EAC = AC + EAC = AC + New estimate for remaining work.
 
@@ -525,20 +544,29 @@ Cost Performance Index at Conclusion, CPIAC.
 
   * CPIAC = BAC / EAC
 
+#### Schedule baseline and time forecasting
+
+  * Performance Measurement Baseline duration, PMB-Duration = BAC / min(employees-number * assigned-tasks-employee, number of tasks). It is the ideal duration in ticks if every employee works all assigned tasks in parallel at one hour per tick. It is calculated once at setup, so moving sliders during a run does not rewrite the plan.
+  * Earned Schedule, ES = PMB-Duration * EV / BAC: the time at which the baseline planned to have earned the current EV.
+  * Time-based schedule index, SPIt = ES / ticks.
+  * Time Estimate at Completion, EACt = PMB-Duration / SPIt. It shows "n/a" until some value has been earned and equals the real duration when the project finishes.
+
+When a ratio has no data yet, SPI and CPI show the neutral value 1, SV%, CV% and VAC% show 0, and TCPI and EAC2 show "n/a" if they are undefined.
+
 ## HOW TO USE IT
 
 ### Setup
 
   1. First, establish the number of employees involved and the number of tasks to perform on the project.
-  2. Second, the setup procedure will generate the number of tasks selected with random units of effort with values between 1 and 10 and the desired set of employees.
-  3. Third, establish the probability that a task will be late and the probability that it will be ahead. For an ideal scenario, the chance is zero in both cases.
+  2. Second, the setup procedure will generate the number of tasks selected with random units of effort (Fibonacci-like values from 1 to 233 hours) and the desired set of employees, or load the tasks from a CSV file.
+  3. Third, establish the probability that a worked hour is lost (probability-of-delay) and the probability that a task gains an extra hour of progress (probability-of-advance). For an ideal scenario, the chance is zero in both cases. If delay is 1 and advance is 0 no task can ever progress, and the model refuses to run.
   4. Finally, decide how many tasks each worker will be able to execute simultaneously. The budget at completion is the sum of all the story points or units of effort defined for each job.
 
 
 ### Running the model
 
 1. Run the simulation step by step or in continue running.
-2. On the fly, alter the values of probability-of-delay, probability-of-advance, or assigned-tasks-employee to see the consequences on the burndown chart and system state.
+2. On the fly, alter the values of probability-of-delay, probability-of-advance, or assigned-tasks-employee to see the consequences on the burndown chart and system state. The baseline (PMB-Duration and therefore PV) is fixed at setup, so these changes show up as schedule and cost variances against the original plan.
 
 ### After finishing simulation
 
@@ -549,7 +577,7 @@ Cost Performance Index at Conclusion, CPIAC.
 
 ## THINGS TO NOTICE
 
-Note that although the probabilities of delay and progress are equal, the project does not necessarily end with the estimated cost. Check the performance indexes values while simulation running if you change simulation condition in runtime.
+Note that although the probabilities of delay and advance are equal, the project does not necessarily end with the estimated cost, and CPI can exceed 1 because advance produces free progress. Check the performance indexes values while simulation running if you change simulation condition in runtime.
 
 ## THINGS TO TRY
 
