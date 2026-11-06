@@ -1,0 +1,1519 @@
+<?xml version="1.0" encoding="utf-8"?>
+<model version="NetLogo 7.0.4" snapToGrid="false">
+  <code><![CDATA[;;EXTENSIONS
+
+;extensions [ csv ]
+
+;;INCLUDING A NETLOGO SOURCE FILES
+;__includes["EarnedValueManagement.nls"]
+
+;;GLOBAL VARIABLES
+globals [backlog pmb-baseline]
+
+;;BREED DEFINITIONS
+directed-link-breed [assignments assignment]   ;; employee -> task
+undirected-link-breed [teammates teammate]      ;; employee -- employee
+breed [employees employee]
+breed [tasks task]
+
+;AGENT PROPERTIES DEF SECTION
+employees-own [
+  employee-number
+  status
+  role
+  motivation
+]
+
+tasks-own [
+  status
+  task-number
+  task-description
+  priority
+  project-code
+  project-breakdown-code
+  category sub-category
+  planned-start
+  planned-finish
+  planned-hours
+  complete-hours
+  actual-hours
+]
+
+
+;;SETUP-SECTION
+to setup
+  clear-all
+  setup-tasks
+  setup-employees
+  set-baseline
+  reset-ticks
+end
+
+to setup-tasks
+
+    create-tasks number-of-tasks [
+      set color red
+      set shape "square"
+      set status "to-do"
+      set task-number 100
+      set task-description "task-description"
+      set priority 0
+      set project-code 0
+      set project-breakdown-code 0
+      set category 0
+      set sub-category 0
+      set planned-start "01/01/2022"
+      set planned-finish "01/02/2022"
+      set planned-hours item random 12 [1 2 3 5 8 13 21 34 55 89 144 233]
+      set complete-hours 0
+      set actual-hours 0]
+
+  set backlog sort-on [priority * 100000 + who] tasks
+  tasks-board-update
+end
+
+to setup-employees
+  create-employees employees-number [
+    setxy random-xcor (random 16) - 16
+    set shape "person"
+    set employee-number random 10000
+    set status "Active"
+    set role "Developer"
+    set motivation 1.0
+  ]
+  create-team
+end
+
+;;EXECUTION SECTION
+to go
+  if probability-of-delay >= 1 and probability-of-advance <= 0 [
+    user-message "With probability-of-delay = 1 and probability-of-advance = 0 no task can ever progress."
+    stop
+  ]
+  processing-the-tasks
+  if count tasks with [color = green] = count tasks [stop]
+  tick
+end
+
+;;PROCEDURES SECTION
+to processing-the-tasks
+  the-employee-picks-tasks-from-the-to-do-backlog
+  the-employee-moves-assignments-to-the-in-progress-queue
+  the-employee-achieves-and-moves-tasks-to-the-done-cue
+
+end
+
+to the-employee-picks-tasks-from-the-to-do-backlog
+  foreach sort employees[
+    the-employee -> ask the-employee [
+      if count out-assignment-neighbors with [status = "in-progress"] < assigned-tasks-employee [
+        if not empty? backlog [
+          ;; the backlog is ordered by priority (lowest value first), then by creation order
+          let next-task first backlog
+          set backlog but-first backlog
+          create-assignment-to next-task
+        ]
+      ]
+    ]
+  ]
+  tasks-board-update
+end
+
+to the-employee-moves-assignments-to-the-in-progress-queue
+  ask employees [
+    ask out-assignment-neighbors with [status = "to-do"][
+        set color yellow
+        set status "in-progress"
+    ]
+  ]
+  tasks-board-update
+end
+
+to the-employee-achieves-and-moves-tasks-to-the-done-cue
+  ask employees [
+    ask out-assignment-neighbors with [status = "in-progress"][
+      if complete-hours < planned-hours [
+        ;; every hour worked costs one hour, whether or not it produces progress
+        set actual-hours actual-hours + 1
+        ;; with probability-of-delay the hour is lost (no progress)
+        if random-float 1 >= probability-of-delay [
+          set complete-hours complete-hours + 1
+        ]
+        ;; with probability-of-advance the task progresses an extra hour at no extra cost
+        if random-float 1 < probability-of-advance [
+          set complete-hours complete-hours + 1
+        ]
+        set complete-hours min (list complete-hours planned-hours)
+      ]
+      ;; completion is checked right after the work, so there is no one-tick lag
+      if complete-hours >= planned-hours [
+        set color green
+        set status "done"
+      ]
+    ]
+  ]
+  tasks-board-update
+end
+
+;; forms a link between all employees
+to create-team
+  ask employees
+  [
+    create-teammates-with other employees
+    [
+      set color blue
+    ]
+  ]
+end
+
+to tasks-board-update
+  let x -16
+  let y 0
+  foreach sort tasks with [status = "to-do"][
+    the-task -> ask the-task [
+      setxy x y
+
+      ifelse x >= -6
+      [set x -16
+      set y y + 1]
+      [set x x + 1]
+
+      if y >= 17
+      [set y 0]
+    ]
+  ]
+
+  set x -5
+  set y 0
+  foreach sort tasks with [status = "in-progress"][
+    the-task -> ask the-task [
+      setxy x y
+
+      ifelse x >= 5
+      [set x -5
+      set y y + 1]
+      [set x x + 1]
+
+      if y >= 17
+      [set y 0]
+    ]
+  ]
+
+  set x 6
+  set y 0
+  foreach sort tasks with [status = "done"][
+    the-task -> ask the-task [
+      setxy x y
+
+      ifelse x >= 16
+      [set x 6
+      set y y + 1]
+      [set x x + 1]
+
+      if y >= 17
+      [set y 0]
+    ]
+  ]
+end
+
+;; Budget at Completion: total planned hours of all tasks
+;; Budget at Completion: total planned hours of all tasks
+;; Budget at Completion: total planned hours of all tasks
+to-report BAC
+  report sum [planned-hours] of tasks
+end
+
+;; Performance Measurement Baseline duration (in ticks). Frozen at setup (see set-baseline)
+;; so moving sliders mid-run does not rewrite history.
+to-report PMB-Duration
+  report pmb-baseline
+end
+
+;; Called once at the end of setup. The ideal plan assumes every employee works
+;; assigned-tasks-employee tasks in parallel at 1 hour per tick each, but never more
+;; parallel work than there are tasks.
+to set-baseline
+  let capacity min (list (count employees * assigned-tasks-employee) (count tasks))
+  ifelse capacity > 0
+    [set pmb-baseline BAC / capacity]
+    [set pmb-baseline 0]
+end
+
+;; Planned Value: time-phased linear baseline, BAC * (elapsed time / planned duration), capped at BAC
+to-report PV
+  if BAC <= 0 or PMB-Duration <= 0 [report 0]
+  report BAC * min (list 1 (ticks / PMB-Duration))
+end
+
+;; Actual Cost: hours actually spent on tasks
+to-report AC
+  report sum [actual-hours] of tasks
+end
+
+;; Earned Value: planned hours of the work actually accomplished
+to-report EV
+  report sum [complete-hours] of tasks
+end
+
+to-report PV%
+  ifelse BAC > 0 [report (PV / BAC)][report 1]
+end
+
+to-report EV%
+  ifelse BAC > 0 [report (EV / BAC)][report 1]
+end
+
+to-report AC%
+  ifelse BAC > 0 [report (AC / BAC)][report 1]
+end
+
+to-report SV
+  report EV - PV
+end
+
+to-report CV
+  report EV - AC
+end
+
+to-report SV%
+  ifelse PV > 0 [report SV / PV][report 0]
+end
+
+to-report CV%
+  ifelse EV > 0 [report CV / EV][report 0]
+end
+
+;; SPI and CPI report the neutral value 1 until there is data (PV or AC > 0)
+to-report SPI
+  ifelse PV > 0 [report EV / PV][report 1]
+end
+
+to-report CPI
+  ifelse AC > 0 [report EV / AC][report 1]
+end
+
+;; Undefined ("n/a") when the budget is exhausted but work remains
+to-report TCPI
+  ifelse (BAC - AC) > 0
+    [report (BAC - EV) / (BAC - AC)]
+    [ifelse BAC - EV <= 0 [report 1][report "n/a"]]
+end
+
+;; Estimate at Completion, assuming the remaining work is done at the budgeted rate: BAC - CV
+to-report EAC1
+  report BAC - CV
+end
+
+;; Estimate at Completion, assuming the current cost performance continues: BAC / CPI
+to-report EAC2
+  ifelse CPI > 0 [report BAC / CPI][report "n/a"]
+end
+
+to-report ETC
+  report EAC1 - AC
+end
+
+to-report ETC2
+  ifelse is-number? EAC2 [report EAC2 - AC][report "n/a"]
+end
+
+to-report VAC
+  report BAC - EAC1
+end
+
+to-report VAC%
+  ifelse BAC > 0 [report VAC / BAC][report 0]
+end
+
+to-report CPIAC
+  ifelse EAC1 > 0 [report BAC / EAC1][report 1]
+end
+
+;; Earned Schedule: the time at which the baseline planned to have earned the current EV
+to-report ES
+  ifelse BAC > 0 [report PMB-Duration * min (list 1 (EV / BAC))][report 0]
+end
+
+;; Time-based schedule performance index (earned schedule / actual time)
+to-report SPIt
+  ifelse ticks > 0 [report ES / ticks][report 0]
+end
+
+;; Time Estimate at Completion: planned duration / SPI(t). Undefined ("n/a") until some progress is earned.
+;; Unlike PMB / SPI, this equals the real duration once the project finishes.
+to-report EACt
+  ifelse SPIt > 0 [report PMB-Duration / SPIt][report "n/a"]
+end]]></code>
+  <widgets>
+    <view x="315" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-16" height="451" showTickCounter="true" patchSize="13.55" fontSize="10" wrappingAllowedY="false" width="451" tickCounterLabel="ticks" maxPycor="16" updateMode="0" maxPxcor="16" minPxcor="-16"></view>
+    <button x="0" y="285" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="95" display="setup">setup</button>
+    <button x="190" y="285" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="86" display="go">go</button>
+    <monitor x="210" precision="17" y="395" height="60" fontSize="11" width="100" display="Done">count tasks with [status = "done"]</monitor>
+    <plot x="0" autoPlotX="true" yMax="10.0" autoPlotY="true" yAxis="tasks" y="460" xMin="0.0" height="175" legend="false" xMax="10.0" yMin="0.0" width="275" xAxis="time" display="Burndown chart">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="ToDo" color="-2674135" legend="true">
+        <setup></setup>
+        <update>plot count tasks with [status = "to-do"]</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="InProgress" color="-13345367" legend="true">
+        <setup></setup>
+        <update>plot count tasks with [status = "in-progress"]</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="Done" color="-10899396" legend="true">
+        <setup></setup>
+        <update>plot count tasks with [status = "done"]</update>
+      </pen>
+    </plot>
+    <slider x="0" step="1" y="10" max="100" width="275" display="employees-number" height="50" min="1" direction="Horizontal" default="5.0" variable="employees-number"></slider>
+    <button x="96" y="285" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="93" display="step-go">go</button>
+    <slider x="0" step="1" y="65" max="2000" width="275" display="number-of-tasks" height="50" min="1" direction="Horizontal" default="1.0" variable="number-of-tasks"></slider>
+    <monitor x="105" precision="17" y="395" height="60" fontSize="11" width="100" display="In progress">count tasks with [status = "in-progress"]</monitor>
+    <monitor x="0" precision="17" y="395" height="60" fontSize="11" width="100" display="To do">count tasks with [status = "to-do"]</monitor>
+    <plot x="775" autoPlotX="true" yMax="1.0" autoPlotY="true" y="140" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="0.0" width="294" display="Earned value ">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="PV%" color="-10899396" legend="true">
+        <setup></setup>
+        <update>plot PV%</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="AC%" color="-2674135" legend="true">
+        <setup></setup>
+        <update>plot AC%</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="EV%" color="-13345367" legend="true">
+        <setup></setup>
+        <update>plot EV%</update>
+      </pen>
+    </plot>
+    <monitor x="775" precision="17" y="10" height="60" fontSize="11" width="145" display="Planned Value">PV</monitor>
+    <monitor x="775" precision="17" y="75" height="60" fontSize="11" width="100" display="Earned Value">EV</monitor>
+    <monitor x="928" precision="17" y="10" height="60" fontSize="11" width="148" display="Actual Cost">AC</monitor>
+    <monitor x="0" precision="17" y="330" height="60" fontSize="11" width="276" display="Budget at Completion">BAC</monitor>
+    <monitor x="880" precision="17" y="75" height="60" fontSize="11" width="109" display="Schedule Variance">SV</monitor>
+    <monitor x="994" precision="17" y="75" height="60" fontSize="11" width="100" display="Cost Variance">CV</monitor>
+    <monitor x="1099" precision="17" y="10" height="60" fontSize="11" width="273" display="Schedule Performance Index">SPI</monitor>
+    <monitor x="1099" precision="17" y="75" height="60" fontSize="11" width="273" display="Cost Performance Index">CPI</monitor>
+    <monitor x="775" precision="17" y="337" height="60" fontSize="11" width="294" display="To Complete Performance Index">TCPI</monitor>
+    <plot x="1099" autoPlotX="true" yMax="1.5" autoPlotY="true" y="140" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="-0.0" width="273" display="Performance">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="SPI" color="-13345367" legend="true">
+        <setup></setup>
+        <update>plot SPI</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="CPI" color="-2674135" legend="true">
+        <setup></setup>
+        <update>plot CPI</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="1.0" color="-3026479" legend="false">
+        <setup></setup>
+        <update>plot 1</update>
+      </pen>
+    </plot>
+    <plot x="775" autoPlotX="true" yMax="1.0" autoPlotY="true" y="402" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="0.0" width="294" display="To Complete Performance Index">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="TCPI" color="-16777216" legend="true">
+        <setup></setup>
+        <update>if is-number? TCPI [ plot TCPI ]</update>
+      </pen>
+    </plot>
+    <slider x="0" step="0.01" y="120" max="1" width="275" display="probability-of-delay" height="50" min="0" direction="Horizontal" default="0.2" variable="probability-of-delay"></slider>
+    <monitor x="738" precision="17" y="599" height="60" fontSize="11" width="156" display="Estimate at Completion">EAC1</monitor>
+    <monitor x="896" precision="17" y="599" height="60" fontSize="11" width="136" display="Estimate to Complete">ETC</monitor>
+    <monitor x="1074" precision="17" y="599" height="60" fontSize="11" width="135" display="Variance at Completion">VAC</monitor>
+    <monitor x="1074" precision="17" y="337" height="60" fontSize="11" width="274" display="Cost Performance Index at Conclusion">CPIAC</monitor>
+    <plot x="1036" autoPlotX="true" yMax="10.0" autoPlotY="true" y="664" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="0.0" width="276" display="Time Estimate at Completion">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="EACt" color="-16777216" legend="true">
+        <setup></setup>
+        <update><![CDATA[if ES > 0 [ plot EACt ]]]></update>
+      </pen>
+      <pen interval="1.0" mode="0" display="Ticks" color="-7500403" legend="true">
+        <setup></setup>
+        <update>plot ticks</update>
+      </pen>
+    </plot>
+    <monitor x="1214" precision="17" y="599" height="60" fontSize="11" width="139" display="Time Estimate at Completion">EACt</monitor>
+    <plot x="737" autoPlotX="true" yMax="10.0" autoPlotY="true" y="664" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="0.0" width="295" display="Estimations">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="EAC" color="-16777216" legend="true">
+        <setup></setup>
+        <update>plot EAC1</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="ETC" color="-7500403" legend="true">
+        <setup></setup>
+        <update>plot ETC</update>
+      </pen>
+    </plot>
+    <monitor x="458" precision="17" y="470" height="60" fontSize="11" width="274" display="Performance Measurement Baseline Duration">PMB-Duration</monitor>
+    <slider x="0" step="1" y="230" max="10" width="275" display="assigned-tasks-employee" height="50" min="1" direction="Horizontal" default="3.0" variable="assigned-tasks-employee"></slider>
+    <slider x="0" step="0.01" y="175" max="1" width="275" display="probability-of-advance" height="50" min="0" direction="Horizontal" default="0.2" variable="probability-of-advance"></slider>
+    <plot x="1074" autoPlotX="true" yMax="1.0" autoPlotY="true" y="402" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="0.0" width="275" display="Cost Performance Index at Conclusion">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="CPIAC" color="-16777216" legend="true">
+        <setup></setup>
+        <update>plot CPIAC</update>
+      </pen>
+    </plot>
+    <plot x="458" autoPlotX="true" yMax="10.0" autoPlotY="true" y="535" xMin="0.0" height="175" legend="false" xMax="10.0" yMin="0.0" width="274" display="Performance Measurement Baseline Duration">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="PMB-duration" color="-16777216" legend="true">
+        <setup></setup>
+        <update>plot PMB-Duration</update>
+      </pen>
+    </plot>
+  </widgets>
+  <info>## WHAT IS IT?
+
+The model aims to illustrate how Earned Vaue Management (EVM) provides an approach to measure a project's performance by comparing its actual progress against the planned one, allowing it to evaluate trends to formulate forecasts. The instance performs a project execution and calculates the EVM performance indexes according to a Performance Measurement Baseline (PMB), which integrates the description of the work to do (scope), the deadlines for its execution (schedule), and the calculation of its costs and the resources required for its implementation (cost). 
+
+Specifically, we are addressing the following questions: How does the risk of execution delay or advance impact cost and schedule performance? How do the players' number or individual work capacity impact cost and schedule estimations to finish? Regardless of why workers cause delays or produce overruns in their assignments, does EVM assess delivery performance and help make objective decisions? 
+
+To consider our model realistic enough for its purpose, we use the following patterns: The model addresses classic problems of Project Management (PM). It plays the typical task board where workers are assigned to complete a task backlog in project performance. Workers could delay or advance in the task execution, and we calculate the performance using the PMI-recommended Earned Value. 
+
+
+## HOW IT WORKS
+The model includes the following entities: task and employee. The workspaces and the task board are spatial and temporal resolution and extent.
+
+In the model, agents represent employees executing tasks in a simple, agile production system. Each agent takes a job from the backlog and performs it in the set time. The interface displays employees and tasks on a Kanban-like task board. To-do tasks are in the red card column, jobs in progress are in the yellow card column, and completed tasks are in the green card column.
+
+The most critical processes of the model, which are repeated every time step, are: firstly, the employee picks tasks from the to-do backlog. Then the employee moves assignments to the in-progress queue. Finally, the employee achieves and carries tasks to the done cue.
+
+The most important design concepts of the model are a task backlog, a task board, players (or employees), a cost and schedule plan, and performance metrics.
+
+  1. The task backlog is a task backlog (to-do column) that requires individuals to complete it. The task board is task states portrayed on a task board to visualize the project's advancement.
+
+  2. The players or employees must take as many as permitted tasks from the "to-do" queue and deliver them to the "done" cue in the panel. While a player is working on an assignment, he must keep the assignment tag in the "in-progress" column.
+
+  3. The cost and schedule plan has a task-planned cost in hours and start-finish time, but the worker could delay or advance in completing the job, or environmental situations could increase and decrease the final cost.
+  
+  4. The performance metrics are the Earned Value Management metrics that estimate the project performance.
+
+
+### Earned Value Management (EVM) metrics
+
+We evaluate the system's efficiency using the Earned Value Measures (EVM).
+
+EVM consists of the following primary and derived data elements. Each data point value is based on the time or date an EVM measure is performed on the project.
+
+#### Main values
+
+  * Planned Value, PV.
+  * Earned Value, EV.
+  * Actual Cost, AC.
+  * Budget at Completion, BAC.
+
+Percentages
+
+  * PV% = PV / BAC
+  * EV% = EV / BAC
+  * AC% = AC / BAC
+
+#### Variations
+
+Schedule Variance, SV. 
+
+  * SV = EV – PV
+
+Cost Variance, CV. 
+
+  * CV = EV – AC
+
+  * SV% = SV / PV
+  * CV% = CV / EV
+
+#### Performance indexes
+
+Schedule Performance Index, SPI. 
+
+  * SPI = EV / PV
+
+Cost Performance Index, CPI. 
+
+  * CPI = EV /AC
+
+To Complete Performance Index, TCPI. 
+
+  * TCPI = (BAC – EV) / (BAC – AC).
+
+#### Forecasting
+
+Estimate at Completion, EAC. 
+
+  * EAC = BAC – SV
+  * EAC = BAC / CPI
+  * EAC = BAC / (CPI * SPI)
+  * EAC = AC + EAC = AC + New estimate for remaining work.
+
+Estimate to Complete, ETC.
+ 
+  * ETC = EAC – AC
+
+Variance at Completion, VAC. 
+
+  * VAC = BAC – EAC
+  * VAC% = VAC / BAC
+
+Cost Performance Index at Conclusion, CPIAC. 
+
+  * CPIAC = BAC / EAC
+
+## HOW TO USE IT
+
+### Setup
+
+  1. First, establish the number of employees involved and the number of tasks to perform on the project.
+  2. Second, the setup procedure will generate the number of tasks selected with random units of effort with values between 1 and 10 and the desired set of employees.
+  3. Third, establish the probability that a task will be late and the probability that it will be ahead. For an ideal scenario, the chance is zero in both cases.
+  4. Finally, decide how many tasks each worker will be able to execute simultaneously. The budget at completion is the sum of all the story points or units of effort defined for each job.
+
+
+### Running the model
+
+1. Run the simulation step by step or in continue running.
+2. On the fly, alter the values of probability-of-delay, probability-of-advance, or assigned-tasks-employee to see the consequences on the burndown chart and system state.
+
+### After finishing simulation
+
+1. Review the outcomes (burndown chart and EVM metrics).
+2. Download tasks and employees' status to a CSV file if required. 
+3. Use the EVM attached tools to compare results.
+
+
+## THINGS TO NOTICE
+
+Note that although the probabilities of delay and progress are equal, the project does not necessarily end with the estimated cost. Check the performance indexes values while simulation running if you change simulation condition in runtime.
+
+## THINGS TO TRY
+
+1. Try to create different configurations by imagining scenarios according to experience. 
+2. Try loading sample tasks from the CSV files. One sample file comes from a software development project with 12299 tasks. The second file comes from a Microsoft Project sample file with a basic software development project template with 61 tasks. 
+
+## EXTENDING THE MODEL
+
+Loading the tasks from a CSV file demonstrates how we can import representative scenarios for analysis. The model can be extended by loading new files with sample tasks.
+
+We could try adding human factors to the model. In that case, we could also add the decision-making attributes of individuals or some social factors resulting from their interactions and relationships.
+
+Adding emergent behaviors resulting from the interaction of team members could add complexity to the model to explore the production system as a complex adaptive system.
+
+
+## CREDITS AND REFERENCES
+
+This model is an output of a research project supported by the internal research project fund of the Autonomous University of Baja California. Project registry: 300/6/C/11/22.
+
+## LICENSE
+
+Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is licensed under CC BY 4.0. To view a copy of this license, visit http://creativecommons.org/licenses/by/4.0/</info>
+  <turtleShapes>
+    <shape name="default" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="5"></point>
+        <point x="40" y="250"></point>
+        <point x="150" y="205"></point>
+        <point x="260" y="250"></point>
+      </polygon>
+    </shape>
+    <shape name="airplane" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="0"></point>
+        <point x="135" y="15"></point>
+        <point x="120" y="60"></point>
+        <point x="120" y="105"></point>
+        <point x="15" y="165"></point>
+        <point x="15" y="195"></point>
+        <point x="120" y="180"></point>
+        <point x="135" y="240"></point>
+        <point x="105" y="270"></point>
+        <point x="120" y="285"></point>
+        <point x="150" y="270"></point>
+        <point x="180" y="285"></point>
+        <point x="210" y="270"></point>
+        <point x="165" y="240"></point>
+        <point x="180" y="180"></point>
+        <point x="285" y="195"></point>
+        <point x="285" y="165"></point>
+        <point x="180" y="105"></point>
+        <point x="180" y="60"></point>
+        <point x="165" y="15"></point>
+      </polygon>
+    </shape>
+    <shape name="arrow" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="0"></point>
+        <point x="0" y="150"></point>
+        <point x="105" y="150"></point>
+        <point x="105" y="293"></point>
+        <point x="195" y="293"></point>
+        <point x="195" y="150"></point>
+        <point x="300" y="150"></point>
+      </polygon>
+    </shape>
+    <shape name="box" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="285"></point>
+        <point x="285" y="225"></point>
+        <point x="285" y="75"></point>
+        <point x="150" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="135"></point>
+        <point x="15" y="75"></point>
+        <point x="150" y="15"></point>
+        <point x="285" y="75"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="15" y="75"></point>
+        <point x="15" y="225"></point>
+        <point x="150" y="285"></point>
+        <point x="150" y="135"></point>
+      </polygon>
+      <line endX="150" startY="285" marked="false" color="255" endY="135" startX="150"></line>
+      <line endX="15" startY="135" marked="false" color="255" endY="75" startX="150"></line>
+      <line endX="285" startY="135" marked="false" color="255" endY="75" startX="150"></line>
+    </shape>
+    <shape name="bug" rotatable="true" editableColorIndex="0">
+      <circle x="96" y="182" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="110" y="127" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <circle x="110" y="75" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <line endX="80" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+      <line endX="220" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+    </shape>
+    <shape name="butterfly" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="209" y="199"></point>
+        <point x="225" y="225"></point>
+        <point x="225" y="255"></point>
+        <point x="195" y="270"></point>
+        <point x="165" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="89" y="198"></point>
+        <point x="75" y="225"></point>
+        <point x="75" y="255"></point>
+        <point x="105" y="270"></point>
+        <point x="135" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="139" y="148"></point>
+        <point x="100" y="105"></point>
+        <point x="55" y="90"></point>
+        <point x="25" y="90"></point>
+        <point x="10" y="105"></point>
+        <point x="10" y="135"></point>
+        <point x="25" y="180"></point>
+        <point x="40" y="195"></point>
+        <point x="85" y="194"></point>
+        <point x="139" y="163"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="162" y="150"></point>
+        <point x="200" y="105"></point>
+        <point x="245" y="90"></point>
+        <point x="275" y="90"></point>
+        <point x="290" y="105"></point>
+        <point x="290" y="135"></point>
+        <point x="275" y="180"></point>
+        <point x="260" y="195"></point>
+        <point x="215" y="195"></point>
+        <point x="162" y="165"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="135" y="225"></point>
+        <point x="120" y="150"></point>
+        <point x="135" y="120"></point>
+        <point x="150" y="105"></point>
+        <point x="165" y="120"></point>
+        <point x="180" y="150"></point>
+        <point x="165" y="225"></point>
+      </polygon>
+      <circle x="135" y="90" marked="false" color="255" diameter="30" filled="true"></circle>
+      <line endX="195" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+      <line endX="105" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+    </shape>
+    <shape name="car" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="300" y="180"></point>
+        <point x="279" y="164"></point>
+        <point x="261" y="144"></point>
+        <point x="240" y="135"></point>
+        <point x="226" y="132"></point>
+        <point x="213" y="106"></point>
+        <point x="203" y="84"></point>
+        <point x="185" y="63"></point>
+        <point x="159" y="50"></point>
+        <point x="135" y="50"></point>
+        <point x="75" y="60"></point>
+        <point x="0" y="150"></point>
+        <point x="0" y="165"></point>
+        <point x="0" y="225"></point>
+        <point x="300" y="225"></point>
+        <point x="300" y="180"></point>
+      </polygon>
+      <circle x="180" y="180" marked="false" color="255" diameter="90" filled="true"></circle>
+      <circle x="30" y="180" marked="false" color="255" diameter="90" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="162" y="80"></point>
+        <point x="132" y="78"></point>
+        <point x="134" y="135"></point>
+        <point x="209" y="135"></point>
+        <point x="194" y="105"></point>
+        <point x="189" y="96"></point>
+        <point x="180" y="89"></point>
+      </polygon>
+      <circle x="47" y="195" marked="true" color="-1920102913" diameter="58" filled="true"></circle>
+      <circle x="195" y="195" marked="true" color="-1920102913" diameter="58" filled="true"></circle>
+    </shape>
+    <shape name="circle" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+    </shape>
+    <shape name="circle 2" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+    </shape>
+    <shape name="cow" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="200" y="193"></point>
+        <point x="197" y="249"></point>
+        <point x="179" y="249"></point>
+        <point x="177" y="196"></point>
+        <point x="166" y="187"></point>
+        <point x="140" y="189"></point>
+        <point x="93" y="191"></point>
+        <point x="78" y="179"></point>
+        <point x="72" y="211"></point>
+        <point x="49" y="209"></point>
+        <point x="48" y="181"></point>
+        <point x="37" y="149"></point>
+        <point x="25" y="120"></point>
+        <point x="25" y="89"></point>
+        <point x="45" y="72"></point>
+        <point x="103" y="84"></point>
+        <point x="179" y="75"></point>
+        <point x="198" y="76"></point>
+        <point x="252" y="64"></point>
+        <point x="272" y="81"></point>
+        <point x="293" y="103"></point>
+        <point x="285" y="121"></point>
+        <point x="255" y="121"></point>
+        <point x="242" y="118"></point>
+        <point x="224" y="167"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="73" y="210"></point>
+        <point x="86" y="251"></point>
+        <point x="62" y="249"></point>
+        <point x="48" y="208"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="25" y="114"></point>
+        <point x="16" y="195"></point>
+        <point x="9" y="204"></point>
+        <point x="23" y="213"></point>
+        <point x="25" y="200"></point>
+        <point x="39" y="123"></point>
+      </polygon>
+    </shape>
+    <shape name="cylinder" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+    </shape>
+    <shape name="dot" rotatable="false" editableColorIndex="0">
+      <circle x="90" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+    </shape>
+    <shape name="face happy" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="8" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="90" y="239"></point>
+        <point x="62" y="213"></point>
+        <point x="47" y="191"></point>
+        <point x="67" y="179"></point>
+        <point x="90" y="203"></point>
+        <point x="109" y="218"></point>
+        <point x="150" y="225"></point>
+        <point x="192" y="218"></point>
+        <point x="210" y="203"></point>
+        <point x="227" y="181"></point>
+        <point x="251" y="194"></point>
+        <point x="236" y="217"></point>
+        <point x="212" y="240"></point>
+      </polygon>
+    </shape>
+    <shape name="face neutral" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="7" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <rectangle endX="240" startY="195" marked="false" color="255" endY="225" startX="60" filled="true"></rectangle>
+    </shape>
+    <shape name="face sad" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="8" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="168"></point>
+        <point x="90" y="184"></point>
+        <point x="62" y="210"></point>
+        <point x="47" y="232"></point>
+        <point x="67" y="244"></point>
+        <point x="90" y="220"></point>
+        <point x="109" y="205"></point>
+        <point x="150" y="198"></point>
+        <point x="192" y="205"></point>
+        <point x="210" y="220"></point>
+        <point x="227" y="242"></point>
+        <point x="251" y="229"></point>
+        <point x="236" y="206"></point>
+        <point x="212" y="183"></point>
+      </polygon>
+    </shape>
+    <shape name="fish" rotatable="false" editableColorIndex="0">
+      <polygon color="-1" filled="true" marked="false">
+        <point x="44" y="131"></point>
+        <point x="21" y="87"></point>
+        <point x="15" y="86"></point>
+        <point x="0" y="120"></point>
+        <point x="15" y="150"></point>
+        <point x="0" y="180"></point>
+        <point x="13" y="214"></point>
+        <point x="20" y="212"></point>
+        <point x="45" y="166"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="135" y="195"></point>
+        <point x="119" y="235"></point>
+        <point x="95" y="218"></point>
+        <point x="76" y="210"></point>
+        <point x="46" y="204"></point>
+        <point x="60" y="165"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="75" y="45"></point>
+        <point x="83" y="77"></point>
+        <point x="71" y="103"></point>
+        <point x="86" y="114"></point>
+        <point x="166" y="78"></point>
+        <point x="135" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="136"></point>
+        <point x="151" y="77"></point>
+        <point x="226" y="81"></point>
+        <point x="280" y="119"></point>
+        <point x="292" y="146"></point>
+        <point x="292" y="160"></point>
+        <point x="287" y="170"></point>
+        <point x="270" y="195"></point>
+        <point x="195" y="210"></point>
+        <point x="151" y="212"></point>
+        <point x="30" y="166"></point>
+      </polygon>
+      <circle x="215" y="106" marked="false" color="255" diameter="30" filled="true"></circle>
+    </shape>
+    <shape name="flag" rotatable="false" editableColorIndex="0">
+      <rectangle endX="75" startY="15" marked="true" color="-1920102913" endY="300" startX="60" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="90" y="150"></point>
+        <point x="270" y="90"></point>
+        <point x="90" y="30"></point>
+      </polygon>
+      <line endX="90" startY="135" marked="true" color="-1920102913" endY="135" startX="75"></line>
+      <line endX="90" startY="45" marked="true" color="-1920102913" endY="45" startX="75"></line>
+    </shape>
+    <shape name="flower" rotatable="false" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="135" y="120"></point>
+        <point x="165" y="165"></point>
+        <point x="180" y="210"></point>
+        <point x="180" y="240"></point>
+        <point x="150" y="300"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="240"></point>
+        <point x="195" y="195"></point>
+        <point x="165" y="135"></point>
+      </polygon>
+      <circle x="85" y="132" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="130" y="147" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="192" y="85" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="85" y="40" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="177" y="40" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="177" y="132" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="70" y="85" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="130" y="25" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="96" y="51" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="113" y="68" marked="false" color="255" diameter="74" filled="true"></circle>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="189" y="233"></point>
+        <point x="219" y="188"></point>
+        <point x="249" y="173"></point>
+        <point x="279" y="188"></point>
+        <point x="234" y="218"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="180" y="255"></point>
+        <point x="150" y="210"></point>
+        <point x="105" y="210"></point>
+        <point x="75" y="240"></point>
+        <point x="135" y="240"></point>
+      </polygon>
+    </shape>
+    <shape name="house" rotatable="false" editableColorIndex="0">
+      <rectangle endX="255" startY="120" marked="true" color="-1920102913" endY="285" startX="45" filled="true"></rectangle>
+      <rectangle endX="180" startY="210" marked="false" color="255" endY="285" startX="120" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="15" y="120"></point>
+        <point x="150" y="15"></point>
+        <point x="285" y="120"></point>
+      </polygon>
+      <line endX="270" startY="120" marked="false" color="255" endY="120" startX="30"></line>
+    </shape>
+    <shape name="leaf" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="210"></point>
+        <point x="135" y="195"></point>
+        <point x="120" y="210"></point>
+        <point x="60" y="210"></point>
+        <point x="30" y="195"></point>
+        <point x="60" y="180"></point>
+        <point x="60" y="165"></point>
+        <point x="15" y="135"></point>
+        <point x="30" y="120"></point>
+        <point x="15" y="105"></point>
+        <point x="40" y="104"></point>
+        <point x="45" y="90"></point>
+        <point x="60" y="90"></point>
+        <point x="90" y="105"></point>
+        <point x="105" y="120"></point>
+        <point x="120" y="120"></point>
+        <point x="105" y="60"></point>
+        <point x="120" y="60"></point>
+        <point x="135" y="30"></point>
+        <point x="150" y="15"></point>
+        <point x="165" y="30"></point>
+        <point x="180" y="60"></point>
+        <point x="195" y="60"></point>
+        <point x="180" y="120"></point>
+        <point x="195" y="120"></point>
+        <point x="210" y="105"></point>
+        <point x="240" y="90"></point>
+        <point x="255" y="90"></point>
+        <point x="263" y="104"></point>
+        <point x="285" y="105"></point>
+        <point x="270" y="120"></point>
+        <point x="285" y="135"></point>
+        <point x="240" y="165"></point>
+        <point x="240" y="180"></point>
+        <point x="270" y="195"></point>
+        <point x="240" y="210"></point>
+        <point x="180" y="210"></point>
+        <point x="165" y="195"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="195"></point>
+        <point x="135" y="240"></point>
+        <point x="120" y="255"></point>
+        <point x="105" y="255"></point>
+        <point x="105" y="285"></point>
+        <point x="135" y="285"></point>
+        <point x="165" y="240"></point>
+        <point x="165" y="195"></point>
+      </polygon>
+    </shape>
+    <shape name="line" rotatable="true" editableColorIndex="0">
+      <line endX="150" startY="0" marked="true" color="-1920102913" endY="300" startX="150"></line>
+    </shape>
+    <shape name="line half" rotatable="true" editableColorIndex="0">
+      <line endX="150" startY="0" marked="true" color="-1920102913" endY="150" startX="150"></line>
+    </shape>
+    <shape name="pentagon" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="15"></point>
+        <point x="15" y="120"></point>
+        <point x="60" y="285"></point>
+        <point x="240" y="285"></point>
+        <point x="285" y="120"></point>
+      </polygon>
+    </shape>
+    <shape name="person" rotatable="false" editableColorIndex="0">
+      <circle x="110" y="5" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="120" y="195"></point>
+        <point x="90" y="285"></point>
+        <point x="105" y="300"></point>
+        <point x="135" y="300"></point>
+        <point x="150" y="225"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="300"></point>
+        <point x="210" y="285"></point>
+        <point x="180" y="195"></point>
+        <point x="195" y="90"></point>
+      </polygon>
+      <rectangle endX="172" startY="79" marked="true" color="-1920102913" endY="94" startX="127" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="195" y="90"></point>
+        <point x="240" y="150"></point>
+        <point x="225" y="180"></point>
+        <point x="165" y="105"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="60" y="150"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="105"></point>
+      </polygon>
+    </shape>
+    <shape name="plant" rotatable="false" editableColorIndex="0">
+      <rectangle endX="165" startY="90" marked="true" color="-1920102913" endY="300" startX="135" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="255"></point>
+        <point x="90" y="210"></point>
+        <point x="45" y="195"></point>
+        <point x="75" y="255"></point>
+        <point x="135" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="255"></point>
+        <point x="210" y="210"></point>
+        <point x="255" y="195"></point>
+        <point x="225" y="255"></point>
+        <point x="165" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="180"></point>
+        <point x="90" y="135"></point>
+        <point x="45" y="120"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="180"></point>
+        <point x="165" y="210"></point>
+        <point x="225" y="180"></point>
+        <point x="255" y="120"></point>
+        <point x="210" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="105"></point>
+        <point x="90" y="60"></point>
+        <point x="45" y="45"></point>
+        <point x="75" y="105"></point>
+        <point x="135" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="105"></point>
+        <point x="165" y="135"></point>
+        <point x="225" y="105"></point>
+        <point x="255" y="45"></point>
+        <point x="210" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="90"></point>
+        <point x="120" y="45"></point>
+        <point x="150" y="15"></point>
+        <point x="180" y="45"></point>
+        <point x="165" y="90"></point>
+      </polygon>
+    </shape>
+    <shape name="sheep" rotatable="false" editableColorIndex="15">
+      <circle x="203" y="65" marked="true" color="-1" diameter="88" filled="true"></circle>
+      <circle x="70" y="65" marked="true" color="-1" diameter="162" filled="true"></circle>
+      <circle x="150" y="105" marked="true" color="-1" diameter="120" filled="true"></circle>
+      <polygon color="-1920102913" filled="true" marked="false">
+        <point x="218" y="120"></point>
+        <point x="240" y="165"></point>
+        <point x="255" y="165"></point>
+        <point x="278" y="120"></point>
+      </polygon>
+      <circle x="214" y="72" marked="false" color="-1920102913" diameter="67" filled="true"></circle>
+      <rectangle endX="179" startY="223" marked="true" color="-1" endY="298" startX="164" filled="true"></rectangle>
+      <polygon color="-1" filled="true" marked="true">
+        <point x="45" y="285"></point>
+        <point x="30" y="285"></point>
+        <point x="30" y="240"></point>
+        <point x="15" y="195"></point>
+        <point x="45" y="210"></point>
+      </polygon>
+      <circle x="3" y="83" marked="true" color="-1" diameter="150" filled="true"></circle>
+      <rectangle endX="80" startY="221" marked="true" color="-1" endY="296" startX="65" filled="true"></rectangle>
+      <polygon color="-1" filled="true" marked="true">
+        <point x="195" y="285"></point>
+        <point x="210" y="285"></point>
+        <point x="210" y="240"></point>
+        <point x="240" y="210"></point>
+        <point x="195" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="false">
+        <point x="276" y="85"></point>
+        <point x="285" y="105"></point>
+        <point x="302" y="99"></point>
+        <point x="294" y="83"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="false">
+        <point x="219" y="85"></point>
+        <point x="210" y="105"></point>
+        <point x="193" y="99"></point>
+        <point x="201" y="83"></point>
+      </polygon>
+    </shape>
+    <shape name="square" rotatable="false" editableColorIndex="0">
+      <rectangle endX="270" startY="30" marked="true" color="-1920102913" endY="270" startX="30" filled="true"></rectangle>
+    </shape>
+    <shape name="square 2" rotatable="false" editableColorIndex="0">
+      <rectangle endX="270" startY="30" marked="true" color="-1920102913" endY="270" startX="30" filled="true"></rectangle>
+      <rectangle endX="240" startY="60" marked="false" color="255" endY="240" startX="60" filled="true"></rectangle>
+    </shape>
+    <shape name="star" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="151" y="1"></point>
+        <point x="185" y="108"></point>
+        <point x="298" y="108"></point>
+        <point x="207" y="175"></point>
+        <point x="242" y="282"></point>
+        <point x="151" y="216"></point>
+        <point x="59" y="282"></point>
+        <point x="94" y="175"></point>
+        <point x="3" y="108"></point>
+        <point x="116" y="108"></point>
+      </polygon>
+    </shape>
+    <shape name="target" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+      <circle x="60" y="60" marked="true" color="-1920102913" diameter="180" filled="true"></circle>
+      <circle x="90" y="90" marked="false" color="255" diameter="120" filled="true"></circle>
+      <circle x="120" y="120" marked="true" color="-1920102913" diameter="60" filled="true"></circle>
+    </shape>
+    <shape name="tree" rotatable="false" editableColorIndex="0">
+      <circle x="118" y="3" marked="true" color="-1920102913" diameter="94" filled="true"></circle>
+      <rectangle endX="180" startY="195" marked="false" color="-1653716737" endY="300" startX="120" filled="true"></rectangle>
+      <circle x="65" y="21" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="116" y="41" marked="true" color="-1920102913" diameter="127" filled="true"></circle>
+      <circle x="45" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+      <circle x="104" y="74" marked="true" color="-1920102913" diameter="152" filled="true"></circle>
+    </shape>
+    <shape name="triangle" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="30"></point>
+        <point x="15" y="255"></point>
+        <point x="285" y="255"></point>
+      </polygon>
+    </shape>
+    <shape name="triangle 2" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="30"></point>
+        <point x="15" y="255"></point>
+        <point x="285" y="255"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="151" y="99"></point>
+        <point x="225" y="223"></point>
+        <point x="75" y="224"></point>
+      </polygon>
+    </shape>
+    <shape name="truck" rotatable="false" editableColorIndex="0">
+      <rectangle endX="195" startY="45" marked="true" color="-1920102913" endY="187" startX="4" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="296" y="193"></point>
+        <point x="296" y="150"></point>
+        <point x="259" y="134"></point>
+        <point x="244" y="104"></point>
+        <point x="208" y="104"></point>
+        <point x="207" y="194"></point>
+      </polygon>
+      <rectangle endX="195" startY="60" marked="false" color="-1" endY="105" startX="195" filled="true"></rectangle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="238" y="112"></point>
+        <point x="252" y="141"></point>
+        <point x="219" y="141"></point>
+        <point x="218" y="112"></point>
+      </polygon>
+      <circle x="234" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <rectangle endX="214" startY="185" marked="true" color="-1920102913" endY="194" startX="181" filled="true"></rectangle>
+      <circle x="144" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <circle x="24" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <circle x="24" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+      <circle x="144" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+      <circle x="234" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+    </shape>
+    <shape name="turtle" rotatable="true" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="215" y="204"></point>
+        <point x="240" y="233"></point>
+        <point x="246" y="254"></point>
+        <point x="228" y="266"></point>
+        <point x="215" y="252"></point>
+        <point x="193" y="210"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="195" y="90"></point>
+        <point x="225" y="75"></point>
+        <point x="245" y="75"></point>
+        <point x="260" y="89"></point>
+        <point x="269" y="108"></point>
+        <point x="261" y="124"></point>
+        <point x="240" y="105"></point>
+        <point x="225" y="105"></point>
+        <point x="210" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="105" y="90"></point>
+        <point x="75" y="75"></point>
+        <point x="55" y="75"></point>
+        <point x="40" y="89"></point>
+        <point x="31" y="108"></point>
+        <point x="39" y="124"></point>
+        <point x="60" y="105"></point>
+        <point x="75" y="105"></point>
+        <point x="90" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="132" y="85"></point>
+        <point x="134" y="64"></point>
+        <point x="107" y="51"></point>
+        <point x="108" y="17"></point>
+        <point x="150" y="2"></point>
+        <point x="192" y="18"></point>
+        <point x="192" y="52"></point>
+        <point x="169" y="65"></point>
+        <point x="172" y="87"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="85" y="204"></point>
+        <point x="60" y="233"></point>
+        <point x="54" y="254"></point>
+        <point x="72" y="266"></point>
+        <point x="85" y="252"></point>
+        <point x="107" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="119" y="75"></point>
+        <point x="179" y="75"></point>
+        <point x="209" y="101"></point>
+        <point x="224" y="135"></point>
+        <point x="220" y="225"></point>
+        <point x="175" y="261"></point>
+        <point x="128" y="261"></point>
+        <point x="81" y="224"></point>
+        <point x="74" y="135"></point>
+        <point x="88" y="99"></point>
+      </polygon>
+    </shape>
+    <shape name="wheel" rotatable="false" editableColorIndex="0">
+      <circle x="3" y="3" marked="true" color="-1920102913" diameter="294" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+      <line endX="150" startY="285" marked="true" color="-1920102913" endY="15" startX="150"></line>
+      <line endX="285" startY="150" marked="true" color="-1920102913" endY="150" startX="15"></line>
+      <circle x="120" y="120" marked="true" color="-1920102913" diameter="60" filled="true"></circle>
+      <line endX="79" startY="40" marked="true" color="-1920102913" endY="269" startX="216"></line>
+      <line endX="269" startY="84" marked="true" color="-1920102913" endY="221" startX="40"></line>
+      <line endX="269" startY="216" marked="true" color="-1920102913" endY="79" startX="40"></line>
+      <line endX="221" startY="40" marked="true" color="-1920102913" endY="269" startX="84"></line>
+    </shape>
+    <shape name="wolf" rotatable="false" editableColorIndex="0">
+      <polygon color="255" filled="true" marked="false">
+        <point x="253" y="133"></point>
+        <point x="245" y="131"></point>
+        <point x="245" y="133"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="2" y="194"></point>
+        <point x="13" y="197"></point>
+        <point x="30" y="191"></point>
+        <point x="38" y="193"></point>
+        <point x="38" y="205"></point>
+        <point x="20" y="226"></point>
+        <point x="20" y="257"></point>
+        <point x="27" y="265"></point>
+        <point x="38" y="266"></point>
+        <point x="40" y="260"></point>
+        <point x="31" y="253"></point>
+        <point x="31" y="230"></point>
+        <point x="60" y="206"></point>
+        <point x="68" y="198"></point>
+        <point x="75" y="209"></point>
+        <point x="66" y="228"></point>
+        <point x="65" y="243"></point>
+        <point x="82" y="261"></point>
+        <point x="84" y="268"></point>
+        <point x="100" y="267"></point>
+        <point x="103" y="261"></point>
+        <point x="77" y="239"></point>
+        <point x="79" y="231"></point>
+        <point x="100" y="207"></point>
+        <point x="98" y="196"></point>
+        <point x="119" y="201"></point>
+        <point x="143" y="202"></point>
+        <point x="160" y="195"></point>
+        <point x="166" y="210"></point>
+        <point x="172" y="213"></point>
+        <point x="173" y="238"></point>
+        <point x="167" y="251"></point>
+        <point x="160" y="248"></point>
+        <point x="154" y="265"></point>
+        <point x="169" y="264"></point>
+        <point x="178" y="247"></point>
+        <point x="186" y="240"></point>
+        <point x="198" y="260"></point>
+        <point x="200" y="271"></point>
+        <point x="217" y="271"></point>
+        <point x="219" y="262"></point>
+        <point x="207" y="258"></point>
+        <point x="195" y="230"></point>
+        <point x="192" y="198"></point>
+        <point x="210" y="184"></point>
+        <point x="227" y="164"></point>
+        <point x="242" y="144"></point>
+        <point x="259" y="145"></point>
+        <point x="284" y="151"></point>
+        <point x="277" y="141"></point>
+        <point x="293" y="140"></point>
+        <point x="299" y="134"></point>
+        <point x="297" y="127"></point>
+        <point x="273" y="119"></point>
+        <point x="270" y="105"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="-1" y="195"></point>
+        <point x="14" y="180"></point>
+        <point x="36" y="166"></point>
+        <point x="40" y="153"></point>
+        <point x="53" y="140"></point>
+        <point x="82" y="131"></point>
+        <point x="134" y="133"></point>
+        <point x="159" y="126"></point>
+        <point x="188" y="115"></point>
+        <point x="227" y="108"></point>
+        <point x="236" y="102"></point>
+        <point x="238" y="98"></point>
+        <point x="268" y="86"></point>
+        <point x="269" y="92"></point>
+        <point x="281" y="87"></point>
+        <point x="269" y="103"></point>
+        <point x="269" y="113"></point>
+      </polygon>
+    </shape>
+    <shape name="x" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="270" y="75"></point>
+        <point x="225" y="30"></point>
+        <point x="30" y="225"></point>
+        <point x="75" y="270"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="75"></point>
+        <point x="75" y="30"></point>
+        <point x="270" y="225"></point>
+        <point x="225" y="270"></point>
+      </polygon>
+    </shape>
+  </turtleShapes>
+  <linkShapes>
+    <shape name="default" curviness="0.0">
+      <lines>
+        <line x="-0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+        <line x="0.0" visible="true">
+          <dash value="1.0"></dash>
+          <dash value="0.0"></dash>
+        </line>
+        <line x="0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+      </lines>
+      <indicator>
+        <shape name="link direction" rotatable="true" editableColorIndex="0">
+          <line endX="90" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+          <line endX="210" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+        </shape>
+      </indicator>
+    </shape>
+  </linkShapes>
+  <previewCommands>setup repeat 75 [ go ]</previewCommands>
+  <experiments>
+    <experiment name="experiment" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="true">
+      <setup>setup</setup>
+      <go>go</go>
+      <postRun><![CDATA[csv:to-file (word "output/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks]]></postRun>
+      <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
+      <metrics>
+        <metric>AC</metric>
+        <metric>PV</metric>
+        <metric>EV</metric>
+        <metric>SV</metric>
+        <metric>SPI</metric>
+        <metric>CV</metric>
+        <metric>CPI</metric>
+        <metric>ticks</metric>
+      </metrics>
+      <constants>
+        <steppedValueSet variable="employees-number" first="1" step="1" last="7"></steppedValueSet>
+        <steppedValueSet variable="assigned-tasks-employee" first="1" step="1" last="3"></steppedValueSet>
+        <steppedValueSet variable="probability-of-delay" first="0" step="0.1" last="0.9"></steppedValueSet>
+        <steppedValueSet variable="probability-of-advance" first="0" step="0.1" last="0.9"></steppedValueSet>
+        <enumeratedValueSet variable="load-file">
+          <value value="true"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="csv-file">
+          <value value="&quot;input/Software-Development-Plan.csv&quot;"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+    <experiment name="experiment_small" repetitions="1" sequentialRunOrder="false" runMetricsEveryStep="true">
+      <setup>setup</setup>
+      <go>go</go>
+      <postRun><![CDATA[csv:to-file (word "output/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks]]></postRun>
+      <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
+      <metrics>
+        <metric>count tasks with [status = "to-do"]</metric>
+        <metric>count tasks with [status = "in-progress"]</metric>
+        <metric>count tasks with [status = "done"]</metric>
+        <metric>AC</metric>
+        <metric>PV</metric>
+        <metric>EV</metric>
+        <metric>SV</metric>
+        <metric>SPI</metric>
+        <metric>CV</metric>
+        <metric>CPI</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="employees-number">
+          <value value="3"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="number-of-tasks">
+          <value value="200"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="assigned-tasks-employee">
+          <value value="3"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-advance">
+          <value value="0.2"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-delay">
+          <value value="0.2"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="load-file">
+          <value value="true"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="csv-file">
+          <value value="&quot;input/Software-Development-Plan.csv&quot;"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+  </experiments>
+</model>

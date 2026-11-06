@@ -6,11 +6,11 @@
 ;__includes["EarnedValueManagement.nls"]
 
 ;;GLOBAL VARIABLES
-globals [tasks-count fibonacci]
+globals [backlog pmb-baseline]
 
 ;;BREED DEFINITIONS
-directed-link-breed [red-links red-link]
-undirected-link-breed [blue-links blue-link]
+directed-link-breed [assignments assignment]   ;; employee -> task
+undirected-link-breed [teammates teammate]      ;; employee -- employee
 breed [employees employee]
 breed [tasks task]
 
@@ -43,6 +43,7 @@ to setup
   clear-all
   setup-tasks
   setup-employees
+  set-baseline
   reset-ticks
 end
 
@@ -65,7 +66,7 @@ to setup-tasks
       set complete-hours 0
       set actual-hours 0]
 
-  set tasks-count count tasks - 1
+  set backlog sort-on [priority * 100000 + who] tasks
   tasks-board-update
 end
 
@@ -83,6 +84,10 @@ end
 
 ;;EXECUTION SECTION
 to go
+  if probability-of-delay >= 1 and probability-of-advance <= 0 [
+    user-message "With probability-of-delay = 1 and probability-of-advance = 0 no task can ever progress."
+    stop
+  ]
   processing-the-tasks
   if count tasks with [color = green] = count tasks [stop]
   tick
@@ -99,10 +104,12 @@ end
 to the-employee-picks-tasks-from-the-to-do-backlog
   foreach sort employees[
     the-employee -> ask the-employee [
-      if count out-link-neighbors with [status = "in-progress"] < assigned-tasks-employee [
-        if tasks-count >= 0 and is-turtle? task tasks-count [
-          create-link-with task tasks-count
-          set tasks-count tasks-count - 1
+      if count out-assignment-neighbors with [status = "in-progress"] < assigned-tasks-employee [
+        if not empty? backlog [
+          ;; the backlog is ordered by priority (lowest value first), then by creation order
+          let next-task first backlog
+          set backlog but-first backlog
+          create-assignment-to next-task
         ]
       ]
     ]
@@ -112,7 +119,7 @@ end
 
 to the-employee-moves-assignments-to-the-in-progress-queue
   ask employees [
-    ask out-link-neighbors with [status = "to-do"][
+    ask out-assignment-neighbors with [status = "to-do"][
         set color yellow
         set status "in-progress"
     ]
@@ -122,7 +129,7 @@ end
 
 to the-employee-achieves-and-moves-tasks-to-the-done-cue
   ask employees [
-    ask out-link-neighbors with [status = "in-progress"][
+    ask out-assignment-neighbors with [status = "in-progress"][
       if complete-hours < planned-hours [
         ;; every hour worked costs one hour, whether or not it produces progress
         set actual-hours actual-hours + 1
@@ -150,7 +157,7 @@ end
 to create-team
   ask employees
   [
-    create-links-with other employees
+    create-teammates-with other employees
     [
       set color blue
     ]
@@ -208,16 +215,26 @@ to tasks-board-update
 end
 
 ;; Budget at Completion: total planned hours of all tasks
+;; Budget at Completion: total planned hours of all tasks
+;; Budget at Completion: total planned hours of all tasks
 to-report BAC
   report sum [planned-hours] of tasks
 end
 
-;; Performance Measurement Baseline duration (in ticks): the ideal plan assumes
-;; every employee works assigned-tasks-employee tasks in parallel, 1 hour per tick each.
+;; Performance Measurement Baseline duration (in ticks). Frozen at setup (see set-baseline)
+;; so moving sliders mid-run does not rewrite history.
 to-report PMB-Duration
-  ifelse count employees > 0 and assigned-tasks-employee > 0
-    [report BAC / (count employees * assigned-tasks-employee)]
-    [report 1]
+  report pmb-baseline
+end
+
+;; Called once at the end of setup. The ideal plan assumes every employee works
+;; assigned-tasks-employee tasks in parallel at 1 hour per tick each, but never more
+;; parallel work than there are tasks.
+to set-baseline
+  let capacity min (list (count employees * assigned-tasks-employee) (count tasks))
+  ifelse capacity > 0
+    [set pmb-baseline BAC / capacity]
+    [set pmb-baseline 0]
 end
 
 ;; Planned Value: time-phased linear baseline, BAC * (elapsed time / planned duration), capped at BAC
@@ -257,13 +274,14 @@ to-report CV
 end
 
 to-report SV%
-  ifelse PV > 0 [report SV / PV][report 1]
+  ifelse PV > 0 [report SV / PV][report 0]
 end
 
 to-report CV%
-  ifelse EV > 0 [report CV / EV][report 1]
+  ifelse EV > 0 [report CV / EV][report 0]
 end
 
+;; SPI and CPI report the neutral value 1 until there is data (PV or AC > 0)
 to-report SPI
   ifelse PV > 0 [report EV / PV][report 1]
 end
@@ -272,8 +290,11 @@ to-report CPI
   ifelse AC > 0 [report EV / AC][report 1]
 end
 
+;; Undefined ("n/a") when the budget is exhausted but work remains
 to-report TCPI
-  ifelse (BAC - AC) > 0 [report (BAC - EV) / (BAC - AC)][report 1]
+  ifelse (BAC - AC) > 0
+    [report (BAC - EV) / (BAC - AC)]
+    [ifelse BAC - EV <= 0 [report 1][report "n/a"]]
 end
 
 ;; Estimate at Completion, assuming the remaining work is done at the budgeted rate: BAC - CV
@@ -283,7 +304,7 @@ end
 
 ;; Estimate at Completion, assuming the current cost performance continues: BAC / CPI
 to-report EAC2
-  ifelse CPI > 0 [report BAC / CPI][report 1]
+  ifelse CPI > 0 [report BAC / CPI][report "n/a"]
 end
 
 to-report ETC
@@ -291,7 +312,7 @@ to-report ETC
 end
 
 to-report ETC2
-  report EAC2 - AC
+  ifelse is-number? EAC2 [report EAC2 - AC][report "n/a"]
 end
 
 to-report VAC
@@ -299,16 +320,27 @@ to-report VAC
 end
 
 to-report VAC%
-  ifelse BAC > 0 [report VAC / BAC][report 1]
+  ifelse BAC > 0 [report VAC / BAC][report 0]
 end
 
 to-report CPIAC
   ifelse EAC1 > 0 [report BAC / EAC1][report 1]
 end
 
-;; Time Estimate at Completion: planned duration / SPI
+;; Earned Schedule: the time at which the baseline planned to have earned the current EV
+to-report ES
+  ifelse BAC > 0 [report PMB-Duration * min (list 1 (EV / BAC))][report 0]
+end
+
+;; Time-based schedule performance index (earned schedule / actual time)
+to-report SPIt
+  ifelse ticks > 0 [report ES / ticks][report 0]
+end
+
+;; Time Estimate at Completion: planned duration / SPI(t). Undefined ("n/a") until some progress is earned.
+;; Unlike PMB / SPI, this equals the real duration once the project finishes.
 to-report EACt
-  ifelse SPI > 0 [report PMB-Duration / SPI][report PMB-Duration]
+  ifelse SPIt > 0 [report PMB-Duration / SPIt][report "n/a"]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -627,7 +659,7 @@ true
 true
 "" ""
 PENS
-"TCPI" 1.0 0 -16777216 true "" "plot TCPI"
+"TCPI" 1.0 0 -16777216 true "" "if is-number? TCPI [ plot TCPI ]"
 
 SLIDER
 0
@@ -704,7 +736,7 @@ true
 true
 "" ""
 PENS
-"EACt" 1.0 0 -16777216 true "" "plot EACt"
+"EACt" 1.0 0 -16777216 true "" "if ES > 0 [ plot EACt ]"
 "Ticks" 1.0 0 -7500403 true "" "plot ticks"
 
 MONITOR
@@ -1271,7 +1303,7 @@ NetLogo 6.3.0
   <experiment name="experiment" repetitions="1" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
-    <final>csv:to-file (word "/Users/puga/Desktop/test3/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
+    <final>csv:to-file (word "output/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
     <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
     <metric>AC</metric>
     <metric>PV</metric>
@@ -1295,7 +1327,7 @@ NetLogo 6.3.0
   <experiment name="experiment_small" repetitions="1" sequentialRunOrder="false" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
-    <final>csv:to-file (word "/Users/puga/Desktop/test5/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
+    <final>csv:to-file (word "output/" behaviorspace-run-number "tasks.csv") [ (list behaviorspace-run-number employees-number assigned-tasks-employee probability-of-delay probability-of-advance task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours AC PV EV SV SPI CV CPI ticks) ] of tasks</final>
     <exitCondition>count tasks with [color = green] = count tasks</exitCondition>
     <metric>count tasks with [status = "to-do"]</metric>
     <metric>count tasks with [status = "in-progress"]</metric>
