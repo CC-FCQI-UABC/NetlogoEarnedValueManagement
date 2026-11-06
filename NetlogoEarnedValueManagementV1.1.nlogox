@@ -1686,7 +1686,7 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
       </constants>
     </experiment>
     <experiment name="regression-no-delay" repetitions="3" sequentialRunOrder="true" runMetricsEveryStep="true">
-      <setup>setup</setup>
+      <setup>random-seed behaviorspace-run-number setup</setup>
       <go>go</go>
       <metrics>
         <metric>ticks</metric>
@@ -1723,7 +1723,7 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
       </constants>
     </experiment>
     <experiment name="regression-plan-csv" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="true">
-      <setup>setup</setup>
+      <setup>random-seed behaviorspace-run-number setup</setup>
       <go>go</go>
       <metrics>
         <metric>ticks</metric>
