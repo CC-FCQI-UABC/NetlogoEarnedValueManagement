@@ -10,8 +10,8 @@ task board, while tasks can be delayed or advanced at random.
 
 | File | Purpose |
 | --- | --- |
-| `NetlogoEarnedValueManagementV1.1.nlogox` | Desktop model (NetLogo 7). Can load the MS Project plan and export CSV files. |
-| `NetlogoEarnedValueManagementWebV1.1.nlogox` | Version for NetLogo Web: random tasks only, EVM code inlined (no `__includes`, no CSV extension). |
+| `NetlogoEarnedValueManagementV1.2.nlogox` | Desktop model (NetLogo 7). Can load the MS Project plan and export CSV files. |
+| `NetlogoEarnedValueManagementWebV1.2.nlogox` | Version for NetLogo Web: random tasks only, EVM code inlined (no `__includes`, no CSV extension). |
 | `EarnedValueManagement.nls` | EVM reporters (BAC, PV, EV, AC, SPI, CPI, TCPI, EAC, ES, EACt...) included by the desktop model. |
 | `input/Software-Development-Plan.csv` | Sample plan exported from MS Project (61 tasks with dates and predecessors). |
 | `input/Plan-link-types.csv` | Small demo plan with one link of each type (SS, FF, FS with a percentage lag, SF, FS with a lag). |

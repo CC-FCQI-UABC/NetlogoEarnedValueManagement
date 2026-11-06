@@ -95,7 +95,7 @@ PLAN_FILES = {
 
 def check_parsing():
     failures = []
-    steps = next(iter(run("NetlogoEarnedValueManagementV1.1.nlogox", "regression-parsing").values()))
+    steps = next(iter(run("NetlogoEarnedValueManagementV1.2.nlogox", "regression-parsing").values()))
     last = steps[-1]
     for expression, expected in PARSING.items():
         if last[expression] != expected:
@@ -106,7 +106,7 @@ def check_parsing():
 
 def check_plan_files():
     failures = []
-    runs = run("NetlogoEarnedValueManagementV1.1.nlogox", "regression-plan-files")
+    runs = run("NetlogoEarnedValueManagementV1.2.nlogox", "regression-plan-files")
     seen = set()
     for steps in runs.values():
         last = steps[-1]
@@ -128,11 +128,11 @@ def check_plan_files():
 failures = []
 failures += check_parsing()
 failures += check_plan_files()
-failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-no-delay", True)
-failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-plan-csv", True)
+failures += check("NetlogoEarnedValueManagementV1.2.nlogox", "regression-no-delay", True)
+failures += check("NetlogoEarnedValueManagementV1.2.nlogox", "regression-plan-csv", True)
 # demo plan with one link of each type (SS, FF, FS+%, SF, FS+days): ideal run = plan, to the tick
-failures += check("NetlogoEarnedValueManagementV1.1.nlogox", "regression-link-types", True, abs_tol=1)
-failures += check("NetlogoEarnedValueManagementWebV1.1.nlogox", "regression-no-delay", True)
+failures += check("NetlogoEarnedValueManagementV1.2.nlogox", "regression-link-types", True, abs_tol=1)
+failures += check("NetlogoEarnedValueManagementWebV1.2.nlogox", "regression-no-delay", True)
 for f in failures:
     print("FAIL", f)
 sys.exit(1 if failures else 0)
