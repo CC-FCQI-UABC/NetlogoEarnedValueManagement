@@ -8,7 +8,7 @@
 ;__includes["EarnedValueManagement.nls"]
 
 ;;GLOBAL VARIABLES
-globals [backlog pmb-baseline plan-rows bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates]
+globals [backlog pmb-baseline plan-rows bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates board-scale]
 
 ;;BREED DEFINITIONS
 directed-link-breed [assignments assignment]   ;; employee -> task
@@ -79,6 +79,8 @@ to setup-tasks
   assign-random-predecessors
   schedule-random-plan
 
+  set board-scale max (list 1 ceiling sqrt (count tasks / 187))
+  ask tasks [set size 1 / board-scale]
   set backlog sort tasks
   tasks-board-update
 end
@@ -262,53 +264,24 @@ to create-team
   ]
 end
 
+;; Task board: three columns of patches (to-do x -16..-6, in-progress x -5..5, done x 6..16), 17 rows each,
+;; one card per patch. With more tasks than slots (187), board-scale cards fit along each side of a
+;; patch (board-scale x board-scale per patch) and the cards shrink accordingly.
 to tasks-board-update
-  let x -16
-  let y 0
-  foreach sort tasks with [status = "to-do"][
-    the-task -> ask the-task [
-      setxy x y
+  place-cards sort tasks with [status = "to-do"] -16 -6
+  place-cards sort tasks with [status = "in-progress"] -5 5
+  place-cards sort tasks with [status = "done"] 6 16
+end
 
-      ifelse x >= -6
-      [set x -16
-      set y y + 1]
-      [set x x + 1]
-
-      if y >= 17
-      [set y 0]
+;; Fills the area from the bottom row up, left to right, in the given order
+to place-cards [cards x-min x-max]
+  let columns (x-max - x-min + 1) * board-scale
+  let i 0
+  foreach cards [ the-task ->
+    ask the-task [
+      setxy (x-min - 0.5 + ((i mod columns) + 0.5) / board-scale) (-0.5 + ((floor (i / columns)) + 0.5) / board-scale)
     ]
-  ]
-
-  set x -5
-  set y 0
-  foreach sort tasks with [status = "in-progress"][
-    the-task -> ask the-task [
-      setxy x y
-
-      ifelse x >= 5
-      [set x -5
-      set y y + 1]
-      [set x x + 1]
-
-      if y >= 17
-      [set y 0]
-    ]
-  ]
-
-  set x 6
-  set y 0
-  foreach sort tasks with [status = "done"][
-    the-task -> ask the-task [
-      setxy x y
-
-      ifelse x >= 16
-      [set x 6
-      set y y + 1]
-      [set x x + 1]
-
-      if y >= 17
-      [set y 0]
-    ]
+    set i i + 1
   ]
 end
 
@@ -672,7 +645,7 @@ To consider our model realistic enough for its purpose, we use the following pat
 ## HOW IT WORKS
 The model includes the following entities: task and employee. The workspaces and the task board are spatial and temporal resolution and extent.
 
-In the model, agents represent employees executing tasks in a simple, agile production system. Each agent takes a job from the backlog and performs it in the set time. The interface displays employees and tasks on a Kanban-like task board. To-do tasks are in the red card column, jobs in progress are in the yellow card column, and completed tasks are in the green card column.
+In the model, agents represent employees executing tasks in a simple, agile production system. Each agent takes a job from the backlog and performs it in the set time. The interface displays employees and tasks on a Kanban-like task board. To-do tasks are in the red card column, jobs in progress are in the yellow card column, and completed tasks are in the green card column. Each column has room for 187 cards; with more tasks the cards shrink and several share a patch.
 
 The most critical processes of the model, which are repeated every time step, are: firstly, the employee picks the next task from the to-do backlog (in creation order) that is ready, that is, whose predecessor tasks are all done. Then the employee moves assignments to the in-progress queue. Finally, the employee achieves and carries tasks to the done cue.
 
