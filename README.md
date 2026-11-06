@@ -17,6 +17,7 @@ task board, while tasks can be delayed or advanced at random.
 | `input/Plan-link-types.csv` | Small demo plan with one link of each type (SS, FF, FS with a percentage lag, SF, FS with a lag). |
 | `output/` | Sample output of `Write tasks to tasks.csv` / `Write employees to employees.csv`. |
 | `tests/check_regression.py` | Headless regression checks (see below). |
+| `tests/plans/` | Plan files used by the tests: one tolerant file (header, blank lines, other date formats) and six with a deliberate error. |
 | `Software Development Plan/`, `EVM Tools/` | The original MS Project plan and EVM calculators used as references. |
 
 ## Running it
@@ -55,6 +56,14 @@ each task earns its planned hours linearly between its start and finish, and
   and the simulated project can still differ slightly from the plan (about 1.6% in the sample
   plan with no delay or advance). Choose the plan with the `plan-file` chooser.
 
+  The reader expects the columns of an MS Project export (ID, unique ID, WBS, name, resources,
+  duration, % complete, start, finish, work in hours, priority, predecessors). Blank lines and
+  a header row are skipped, and rows without a resource (summary tasks, milestones) are not
+  tasks. Dates are month/day/year with an optional weekday, a 2- or 4-digit year and AM/PM or a
+  24-hour clock, such as `Mon 11/7/22 8:00 AM`. If something cannot be read (too few columns,
+  hours or a date that cannot be read, a duplicate ID, a predecessor that is not in the plan)
+  the line number and the problem are shown and no tasks are created.
+
 The Info tab of the model documents every metric and formula.
 
 ## Output files
@@ -67,10 +76,15 @@ Both files have a header row and are written to `output/`.
 
 ## Tests
 
-`tests/check_regression.py` runs the `regression-no-delay`, `regression-plan-csv` and
-`regression-link-types` BehaviorSpace experiments of the models headless and checks that all tasks finish, that no
-task starts before its predecessors are done, and that, with no delay or advance, the real
-duration is close to the planned one.
+`tests/check_regression.py` runs the BehaviorSpace regression experiments of the models headless
+(`--threads 1`, because parallel runs hang while reading files) and checks that:
+
+- `regression-parsing`: the lag, link type and date parsers give the expected values for 17 inputs;
+- `regression-plan-files`: the plan files in `tests/plans/` load as expected, or fail with the
+  expected message and line number;
+- `regression-no-delay`, `regression-plan-csv` and `regression-link-types`: all tasks finish, no
+  task starts or finishes before its links allow, and, with no delay or advance, the real
+  duration is close to the planned one.
 
     python3 tests/check_regression.py "/Applications/NetLogo 7.0.4"
 

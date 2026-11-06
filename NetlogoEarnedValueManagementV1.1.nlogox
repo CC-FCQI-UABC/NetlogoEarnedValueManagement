@@ -8,7 +8,7 @@ extensions [ csv ]
 __includes["EarnedValueManagement.nls"]
 
 ;;GLOBAL VARIABLES
-globals [backlog pmb-baseline plan-rows bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates board-scale]
+globals [backlog pmb-baseline plan-rows bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates board-scale plan-error plan-override]
 
 ;;BREED DEFINITIONS
 directed-link-breed [assignments assignment]   ;; employee -> task
@@ -48,7 +48,15 @@ tasks-own [
 
 ;;SETUP-SECTION
 to setup
+  setup-with-plan ""
+end
+
+;; setup, loading the tasks from the given plan file instead of the plan-file chooser when
+;; path is not "" (used by the tests to try plan files that are not offered in the chooser)
+to setup-with-plan [path]
   clear-all
+  set plan-override path
+  set plan-error ""
   set plan-rows []
   setup-tasks
   setup-employees
@@ -56,51 +64,162 @@ to setup
   reset-ticks
 end
 
-;; Loads the MS Project plan: tasks with dates (planned start/finish) and predecessors
+to-report current-plan-file
+  report ifelse-value plan-override != "" [plan-override][plan-file]
+end
+
+;; Loads the MS Project plan: tasks with dates (planned start/finish) and predecessors.
+;; Expects the columns of an MS Project export: ID, ,unique ID, WBS, name, resources, duration, %,
+;; start, finish, work (hours), priority, predecessors. Blank lines and a header row are skipped.
+;; Rows without a resource (summary tasks, milestones) are not tasks of the model but are kept to
+;; resolve dependencies. Problems are reported with their line number in plan-error (and a message)
+;; and then no tasks are created.
 to read-csv
+  set plan-error ""
   file-close-all ; close all open files
 
-  if not file-exists? plan-file [
-    user-message "No file exists!"
+  if not file-exists? current-plan-file [
+    plan-fail (word "file not found: " current-plan-file)
     stop
   ]
 
-  file-open plan-file ; open the file with the tasks data
+  file-open current-plan-file ; open the file with the tasks data
 
-  ; We'll read all the data in a single loop
-  while [ not file-at-end? ] [
-    ; here the CSV extension grabs a single line and puts the read data in a list
-    let data csv:from-row file-read-line
-    set plan-rows lput data plan-rows ;keep every row (summaries and milestones too) to resolve dependencies
-    ; now we can use that list to create a tasks with the saved properties
-    if item 5 data != ""[ ;if the retived task have an assigned team member, then create a task in the model.
-      create-tasks 1 [
-        set color red
-        set shape "square"
-        set status "to-do"
-        set task-number item 2 data
-        set task-description item 4 data
-        set priority item 11 data
-        set project-code 0
-        set project-breakdown-code item 3 data
-        set category 0
-        set sub-category 0
-        set planned-start item 8 data
-        set planned-finish item 9 data
-        set planned-hours item 10 data
-        set start-tick parse-plan-tick item 8 data
-        set finish-tick parse-plan-tick item 9 data
-        set predecessor-tasks no-turtles
-        set predecessor-links []
-        set complete-hours 0
-        set actual-hours 0]
+  let line-number 0
+  while [not file-at-end? and plan-error = ""] [
+    set line-number line-number + 1
+    let line file-read-line
+    if not blank-text? line [
+      carefully [
+        read-plan-row line line-number
+      ][
+        plan-fail (word "line " line-number ": " error-message)
+      ]
     ]
   ]
 
-  finish-plan
-
   file-close ; make sure to close the file
+
+  if plan-error = "" and not any? tasks [
+    plan-fail "no tasks found (a task row needs a resource name in column 6)"
+  ]
+  if plan-error = "" [finish-plan]
+  if plan-error != "" [ask tasks [die]]
 end
+
+;; Reports a problem with the plan file (the first one wins). In the interface it is also shown in a message.
+to plan-fail [message]
+  if plan-error = "" [
+    set plan-error message
+    print (word "Plan file error: " message)
+    if behaviorspace-run-number = 0 [user-message (word "Plan file error: " message)]
+  ]
+end
+
+;; Processes one non-blank line of the plan file
+to read-plan-row [line n]
+  let data csv:from-row line
+  if length data < 13 [
+    plan-fail (word "line " n ": expected at least 13 columns, found " length data)
+    stop
+  ]
+  if not is-number? item 0 data [
+    ;; a non-numeric ID in the first row is a header, anywhere else it is an error
+    if not empty? plan-rows [
+      plan-fail (word "line " n ": the ID in column 1 is not a number: " item 0 data)
+    ]
+    stop
+  ]
+  let problem plan-row-problem data
+  if problem != "" [
+    plan-fail (word "line " n ": " problem)
+    stop
+  ]
+  set plan-rows lput (lput n data) plan-rows ;keep every row (summaries and milestones too) to resolve dependencies
+  ; now we can use that list to create a tasks with the saved properties
+  if item 5 data != ""[ ;if the retived task have an assigned team member, then create a task in the model.
+    create-tasks 1 [
+      set color red
+      set shape "square"
+      set status "to-do"
+      set task-number item 2 data
+      set task-description item 4 data
+      set priority item 11 data
+      set project-code 0
+      set project-breakdown-code item 3 data
+      set category 0
+      set sub-category 0
+      set planned-start item 8 data
+      set planned-finish item 9 data
+      set planned-hours item 10 data
+      set start-tick parse-plan-tick item 8 data
+      set finish-tick parse-plan-tick item 9 data
+      set predecessor-tasks no-turtles
+      set predecessor-links []
+      set complete-hours 0
+      set actual-hours 0]
+  ]
+end
+
+;; "" if the plan row is valid, otherwise a description of the problem
+to-report plan-row-problem [data]
+  if not is-number? item 2 data [report "the unique ID in column 3 is not a number"]
+  if not empty? filter [r -> item 2 r = item 2 data] plan-rows [report (word "duplicate ID " item 2 data)]
+  ;; predecessors are checked for every row
+  let tokens split-on (word item 12 data) ","
+  let wanted filter [x -> x != ""] tokens
+  if length predecessor-specs data != length wanted [
+    report (word "cannot read the predecessors '" item 12 data "' (expected IDs like 3, 3FS-2 days, 3SS+50%)")
+  ]
+  if item 5 data = "" [report ""]
+  if not is-number? item 10 data [report (word "work hours in column 11 must be a number, found '" item 10 data "'")]
+  if item 10 data < 0 [report "work hours in column 11 cannot be negative"]
+  if empty? parse-plan-date-time item 8 data [report (word "cannot read the start date '" item 8 data "' (expected like Mon 11/7/22 8:00 AM)")]
+  if empty? parse-plan-date-time item 9 data [report (word "cannot read the finish date '" item 9 data "' (expected like Mon 11/7/22 8:00 AM)")]
+  if parse-plan-tick item 9 data < parse-plan-tick item 8 data [report "the finish date is before the start date"]
+  report ""
+end
+
+to-report blank-text? [s]
+  report empty? filter [ch -> not member? ch [" " "\t" "\r"]] n-values length s [i -> item i s]
+end
+
+to-report integer-text? [s]
+  report length s > 0 and empty? filter [ch -> not member? ch "0123456789"] n-values length s [i -> item i s]
+end
+
+;; Reads a date and time such as "Mon 11/7/22 8:00 AM" into [year month day hour minute] (24-hour
+;; clock), or [] if it cannot be read. Month/day/year, a 2- or 4-digit year, an optional weekday and
+;; an optional AM/PM (24-hour clock without it) are accepted.
+to-report parse-plan-date-time [s]
+  if not is-string? s [report []]
+  let words filter [w -> w != ""] split-on s " "
+  let date-words filter [w -> member? "/" w] words
+  let time-words filter [w -> member? ":" w] words
+  let meridiem-words filter [w -> member? w ["AM" "PM" "am" "pm"]] words
+  if length date-words != 1 or length time-words != 1 or length meridiem-words > 1 [report []]
+  let dmy split-on first date-words "/"
+  let hm split-on first time-words ":"
+  if length dmy != 3 or length hm != 2 [report []]
+  if not empty? filter [x -> not integer-text? x] sentence dmy hm [report []]
+  let mo read-from-string item 0 dmy
+  let d read-from-string item 1 dmy
+  let y read-from-string item 2 dmy
+  if length item 2 dmy = 2 [set y y + 2000]
+  let hour read-from-string item 0 hm
+  let minute read-from-string item 1 hm
+  if mo < 1 or mo > 12 or d < 1 or d > 31 or minute > 59 [report []]
+  ifelse empty? meridiem-words [
+    if hour > 23 [report []]
+  ][
+    if hour < 1 or hour > 12 [report []]
+    let pm? (first meridiem-words = "PM" or first meridiem-words = "pm")
+    if pm? and hour < 12 [set hour hour + 12]
+    if (not pm?) and hour = 12 [set hour 0]
+  ]
+  report (list y mo d hour minute)
+end
+
 
 to setup-tasks
   ifelse load-file [
@@ -138,19 +257,15 @@ end
 
 ;; ---- MS Project plan support (dates and dependencies) ----
 
-;; Convert a plan date such as "Mon 11/7/22 8:00 AM" to working hours: 8 hours per business day
-;; (8:00-12:00 and 1:00-5:00, weekends skipped). 1 tick = 1 working hour.
+;; Convert a plan date such as "Mon 11/7/22 8:00 AM" (see parse-plan-date-time) to working hours:
+;; 8 hours per business day (8:00-12:00 and 1:00-5:00, weekends skipped). 1 tick = 1 working hour.
 to-report parse-plan-tick [s]
-  let parts split-on s " "
-  let dmy map [x -> read-from-string x] split-on item 1 parts "/"
-  let hm map [x -> read-from-string x] split-on item 2 parts ":"
-  let hour item 0 hm
-  let pm? (item 3 parts = "PM")
-  if pm? and hour < 12 [set hour hour + 12]
-  if (not pm?) and hour = 12 [set hour 0]
-  let workday-hour ifelse-value hour <= 12 [hour - 8][hour - 9]
+  let dt parse-plan-date-time s
+  if empty? dt [report 0]
+  let clock (item 3 dt) + (item 4 dt) / 60
+  let workday-hour ifelse-value clock <= 12 [clock - 8][clock - 9]
   set workday-hour max (list 0 min (list 8 workday-hour))
-  let dn days-from-civil (2000 + item 2 dmy) (item 0 dmy) (item 1 dmy)
+  let dn days-from-civil (item 0 dt) (item 1 dt) (item 2 dt)
   report 8 * business-days-before dn + workday-hour
 end
 
@@ -196,13 +311,14 @@ to-report parse-predecessor [token]
     ]
     let amount ifelse-value number-text? amount-text [read-from-string amount-text][0]
     let unit-hours 8
+    let minutes? false
     ifelse percent? [
       set unit-hours 1
     ][
       if length parts > 1 and length item 1 parts > 0 [
         let unit first item 1 parts
         if unit = "h" [set unit-hours 1]
-        if unit = "m" [set unit-hours 1 / 60]
+        if unit = "m" [set minutes? true]
         if unit = "w" [set unit-hours 40]
         if unit = "%" [
           set percent? true
@@ -210,7 +326,7 @@ to-report parse-predecessor [token]
         ]
       ]
     ]
-    set lag amount * unit-hours
+    set lag ifelse-value minutes? [amount / 60][amount * unit-hours]
   ]
   report (list id lag kind percent?)
 end
@@ -282,6 +398,15 @@ end
 
 ;; Called after all tasks of the MS Project plan are created
 to finish-plan
+  ;; every predecessor must be a row of the plan
+  foreach plan-rows [ row ->
+    foreach predecessor-specs row [ spec ->
+      if empty? filter [r -> item 2 r = item 0 spec] plan-rows [
+        plan-fail (word "line " last row ": predecessor " item 0 spec " is not in the plan")
+      ]
+    ]
+  ]
+  if plan-error != "" [stop]
   let origin min [start-tick] of tasks
   ask tasks [
     set start-tick start-tick - origin
@@ -773,6 +898,7 @@ MS Project CSV (Software-Development-Plan.csv, desktop version, load-file switch
 
   * Dates: each task's planned start and finish are converted to working hours (8 hours per business day, 8:00-12:00 and 1:00-5:00, weekends skipped; 1 tick = 1 working hour), counted from the earliest start. PV is then the sum, over all tasks, of the planned hours earned linearly between each task's start and finish, and PMB-Duration is the planned finish of the last task. ES is found by searching that curve for the time at which PV equals the current EV.
   * Dependencies: a task can only be picked up once all its predecessors are done (finish-to-start). The lag or lead of a link in the plan (for example "FS-11.25 days") is honoured: a lead lets the task start once its predecessor has at most that much work left (11.25 days = 90 hours). The relation types FS, SS, FF and SF are supported: FS and SS gate the start of the task (after the predecessor finishes or starts, plus the lag), FF and SF gate its completion (the task works normally but cannot finish before the predecessor finishes or starts, plus the lag). A lag may be in days, hours, weeks or minutes, or a percentage of the predecessor's duration (for example "FS+50%"). Summary rows and milestones are not tasks of the model, so a task that depends on one inherits that row's own predecessors.
+  * Plan format: the columns of an MS Project export (ID, unique ID, WBS, name, resources, duration, % complete, start, finish, work in hours, priority, predecessors). Blank lines and a header row are skipped, rows without a resource (summary tasks, milestones) are not tasks, and dates are month/day/year with an optional weekday, a 2- or 4-digit year and AM/PM or a 24-hour clock (for example Mon 11/7/22 8:00 AM). If the file cannot be read (missing columns, a date or hours that cannot be read, an unknown or duplicate ID, a predecessor that is not in the plan) the line number and the problem are shown and no tasks are created.
   * Resource names in the plan are ignored: any employee can pick any task. The plan's dates assume its own resources, so with the plan loaded the simulated project can still differ slightly from the baseline even with no delay or advance (about 1.5% in the sample plan with the default 3 employees).
 
 When a ratio has no data yet, SPI and CPI show the neutral value 1, SV%, CV% and VAC% show 0, and TCPI and EAC2 show "n/a" if they are undefined.
@@ -1812,6 +1938,53 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
         </enumeratedValueSet>
         <enumeratedValueSet variable="assigned-tasks-employee">
           <value value="3"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+    <experiment name="regression-parsing" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false">
+      <setup>setup</setup>
+      <go>go</go>
+      <exitCondition>true</exitCondition>
+      <metrics>
+        <metric>parse-predecessor "29"</metric>
+        <metric>parse-predecessor "29FS-11.25 days"</metric>
+        <metric>parse-predecessor "2SS+8 hrs"</metric>
+        <metric>parse-predecessor "2FS+50%"</metric>
+        <metric>parse-predecessor "7FF-2 days"</metric>
+        <metric>parse-predecessor "3SF+1 wk"</metric>
+        <metric>parse-predecessor "4FS+60 mins"</metric>
+        <metric>parse-predecessor "x1"</metric>
+        <metric>predecessor-specs (list 0 0 0 0 0 0 0 0 0 0 0 0 "33,31")</metric>
+        <metric>(parse-plan-tick "Tue 11/8/22 1:00 PM") - (parse-plan-tick "Mon 11/7/22 8:00 AM")</metric>
+        <metric>(parse-plan-tick "Mon 11/14/22 8:00 AM") - (parse-plan-tick "Fri 11/11/22 5:00 PM")</metric>
+        <metric>(parse-plan-tick "11/8/2022 13:00") - (parse-plan-tick "11/7/22 8:00 am")</metric>
+        <metric>parse-plan-date-time "Mon 11/7/22 8:00 AM"</metric>
+        <metric>parse-plan-date-time "Mon 13/40/22 8:00 AM"</metric>
+        <metric>parse-plan-date-time "tomorrow"</metric>
+        <metric>parse-plan-date-time "12/1/2022 12:30 pm"</metric>
+        <metric>parse-plan-date-time "12/1/2022 12:30 am"</metric>
+      </metrics>
+    </experiment>
+    <experiment name="regression-plan-files" repetitions="7" sequentialRunOrder="true" runMetricsEveryStep="false">
+      <setup>setup-with-plan item (behaviorspace-run-number - 1) (list "tests/plans/ok-tolerant.csv" "tests/plans/bad-short-row.csv" "tests/plans/bad-date.csv" "tests/plans/bad-hours.csv" "tests/plans/bad-unknown-predecessor.csv" "tests/plans/bad-predecessor-syntax.csv" "tests/plans/bad-duplicate-id.csv")</setup>
+      <go>go</go>
+      <metrics>
+        <metric>plan-override</metric>
+        <metric>plan-error</metric>
+        <metric>count tasks</metric>
+        <metric>count tasks with [status = "done"]</metric>
+        <metric>PMB-Duration</metric>
+        <metric>ticks</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="load-file">
+          <value value="true"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-delay">
+          <value value="0"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-advance">
+          <value value="0"></value>
         </enumeratedValueSet>
       </constants>
     </experiment>
