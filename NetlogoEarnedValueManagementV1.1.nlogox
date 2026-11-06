@@ -8,7 +8,7 @@ extensions [ csv ]
 __includes["EarnedValueManagement.nls"]
 
 ;;GLOBAL VARIABLES
-globals [backlog pmb-baseline]
+globals [backlog pmb-baseline plan-rows]
 
 ;;BREED DEFINITIONS
 directed-link-breed [assignments assignment]   ;; employee -> task
@@ -37,79 +37,67 @@ tasks-own [
   planned-hours
   complete-hours
   actual-hours
+  start-tick          ;; planned start / finish in working hours since project start (dated plan only)
+  finish-tick
+  predecessor-tasks   ;; agentset of tasks that must be done first (dependencies only)
 ]
 
 
 ;;SETUP-SECTION
 to setup
   clear-all
+  set plan-rows []
   setup-tasks
   setup-employees
   set-baseline
   reset-ticks
 end
 
+to-report plan-file
+  report "input/Software-Development-Plan.csv"
+end
+
+;; Loads the MS Project plan: tasks with dates (planned start/finish) and predecessors
 to read-csv
   file-close-all ; close all open files
 
-  if not file-exists? csv-file [
+  if not file-exists? plan-file [
     user-message "No file exists!"
     stop
   ]
 
-  file-open csv-file ; open the file with the tasks data
+  file-open plan-file ; open the file with the tasks data
 
-  if csv-file = "input/Sip-task-info.csv" [
-    ; We'll read all the data in a single loop
-    while [ not file-at-end? ] [
-      ; here the CSV extension grabs a single line and puts the read data in a list
-      let data csv:from-row file-read-line
-      ; now we can use that list to create a tasks with the saved properties
+  ; We'll read all the data in a single loop
+  while [ not file-at-end? ] [
+    ; here the CSV extension grabs a single line and puts the read data in a list
+    let data csv:from-row file-read-line
+    set plan-rows lput data plan-rows ;keep every row (summaries and milestones too) to resolve dependencies
+    ; now we can use that list to create a tasks with the saved properties
+    if item 5 data != ""[ ;if the retived task have an assigned team member, then create a task in the model.
       create-tasks 1 [
         set color red
         set shape "square"
         set status "to-do"
-        set task-number item 0 data
-        set task-description item 1 data
-        set priority item 2 data
-        set project-code item 7 data
-        set project-breakdown-code item 8 data
-        set category item 9 data
-        set sub-category item 10 data
-        set planned-start "01/01/2022"
-        set planned-finish "01/02/2022"
-        set planned-hours max (list 1 round item 11 data)
+        set task-number item 2 data
+        set task-description item 4 data
+        set priority item 11 data
+        set project-code 0
+        set project-breakdown-code item 3 data
+        set category 0
+        set sub-category 0
+        set planned-start item 8 data
+        set planned-finish item 9 data
+        set planned-hours item 10 data
+        set start-tick parse-plan-tick item 8 data
+        set finish-tick parse-plan-tick item 9 data
+        set predecessor-tasks no-turtles
         set complete-hours 0
         set actual-hours 0]
     ]
   ]
 
-    if csv-file = "input/Software-Development-Plan.csv" [
-    ; We'll read all the data in a single loop
-    while [ not file-at-end? ] [
-      ; here the CSV extension grabs a single line and puts the read data in a list
-      let data csv:from-row file-read-line
-      ; now we can use that list to create a tasks with the saved properties
-      if item 5 data != ""[ ;if the retived task have an assigned team member, then create a task in the model.
-        create-tasks 1 [
-          set color red
-          set shape "square"
-          set status "to-do"
-          set task-number item 2 data
-          set task-description item 4 data
-          set priority item 11 data
-          set project-code 0
-          set project-breakdown-code item 3 data
-          set category 0
-          set sub-category 0
-          set planned-start item 8 data
-          set planned-finish item 9 data
-          set planned-hours item 10 data
-          set complete-hours 0
-          set actual-hours 0]
-      ]
-    ]
-  ]
+  finish-plan
 
   file-close ; make sure to close the file
 end
@@ -122,7 +110,7 @@ to setup-tasks
       set color red
       set shape "square"
       set status "to-do"
-      set task-number 100
+      set task-number who + 1
       set task-description "task-description"
       set priority 0
       set project-code 0
@@ -132,27 +120,158 @@ to setup-tasks
       set planned-start "01/01/2022"
       set planned-finish "01/02/2022"
       set planned-hours item random 12 [1 2 3 5 8 13 21 34 55 89 144 233]
+      set start-tick -1
+      set finish-tick -1
+      set predecessor-tasks no-turtles
       set complete-hours 0
       set actual-hours 0]
+    assign-random-predecessors
+    schedule-random-plan
   ]
 
-  set backlog sort-by [[a b] -> earlier-in-backlog? a b] tasks
+  set backlog sort tasks
   tasks-board-update
 end
 
-;; Backlog order, set by the priority-order chooser: "lowest-first" (1 is most urgent, the default)
-;; or "highest-first" (e.g. MS Project, where 1000 is most urgent). Ties, and non-numeric
-;; priorities (treated as 0), are broken by creation order.
-to-report earlier-in-backlog? [a b]
-  let sign ifelse-value priority-order = "highest-first" [-1][1]
-  let pa sign * [numeric-priority] of a
-  let pb sign * [numeric-priority] of b
-  report pa < pb or (pa = pb and [who] of a < [who] of b)
+;; ---- MS Project plan support (dates and dependencies) ----
+
+;; Convert a plan date such as "Mon 11/7/22 8:00 AM" to working hours: 8 hours per business day
+;; (8:00-12:00 and 1:00-5:00, weekends skipped). 1 tick = 1 working hour.
+to-report parse-plan-tick [s]
+  let parts split-on s " "
+  let dmy map [x -> read-from-string x] split-on item 1 parts "/"
+  let hm map [x -> read-from-string x] split-on item 2 parts ":"
+  let hour item 0 hm
+  let pm? (item 3 parts = "PM")
+  if pm? and hour < 12 [set hour hour + 12]
+  if (not pm?) and hour = 12 [set hour 0]
+  let workday-hour ifelse-value hour <= 12 [hour - 8][hour - 9]
+  set workday-hour max (list 0 min (list 8 workday-hour))
+  let dn days-from-civil (2000 + item 2 dmy) (item 0 dmy) (item 1 dmy)
+  report 8 * business-days-before dn + workday-hour
 end
 
-;; task context: priority as a number, or 0 if the source data had none
-to-report numeric-priority
-  report ifelse-value is-number? priority [priority][0]
+;; days since 1970-01-01 (proleptic Gregorian calendar)
+to-report days-from-civil [y m d]
+  let yy ifelse-value m <= 2 [y - 1][y]
+  let era floor (yy / 400)
+  let yoe yy - era * 400
+  let doy floor ((153 * (m + ifelse-value m > 2 [-3][9]) + 2) / 5) + d - 1
+  let doe yoe * 365 + floor (yoe / 4) - floor (yoe / 100) + doy
+  report era * 146097 + doe - 719468
+end
+
+;; number of Monday-to-Friday days strictly before day number dn
+to-report business-days-before [dn]
+  let q floor ((dn + 3) / 7)
+  let r (dn + 3) mod 7
+  report 5 * q + min (list 5 r)
+end
+
+;; ids in the predecessor field of a plan row (relation type and lag, e.g. "29FS-11.25 days", are ignored)
+to-report predecessor-ids [row]
+  let spec item 12 row
+  if spec = "" [report []]
+  report filter [id -> id >= 0] map [x -> leading-number x] split-on (word spec) ","
+end
+
+;; split string s at every occurrence of the one-character string sep
+to-report split-on [s sep]
+  let parts []
+  let current ""
+  let i 0
+  while [i < length s] [
+    let ch item i s
+    ifelse ch = sep [
+      set parts lput current parts
+      set current ""
+    ][
+      set current word current ch
+    ]
+    set i i + 1
+  ]
+  report lput current parts
+end
+
+to-report leading-number [s]
+  let digits ""
+  let i 0
+  while [i < length s and member? (item i s) "0123456789"] [
+    set digits word digits (item i s)
+    set i i + 1
+  ]
+  report ifelse-value digits = "" [-1][read-from-string digits]
+end
+
+;; Tasks that must precede the given plan ids. Plan rows that are not tasks of the model
+;; (summary rows, milestones) are skipped, and their own predecessors are inherited.
+to-report resolve-predecessors [ids]
+  let result no-turtles
+  foreach ids [ id ->
+    let t one-of tasks with [task-number = id]
+    ifelse t != nobody [
+      set result (turtle-set result t)
+    ][
+      let rows filter [r -> item 2 r = id] plan-rows
+      if not empty? rows [
+        set result (turtle-set result resolve-predecessors predecessor-ids first rows)
+      ]
+    ]
+  ]
+  report result
+end
+
+;; Called after all tasks of the MS Project plan are created
+to finish-plan
+  let origin min [start-tick] of tasks
+  ask tasks [
+    set start-tick start-tick - origin
+    set finish-tick finish-tick - origin
+    let me task-number
+    set predecessor-tasks resolve-predecessors predecessor-ids first filter [r -> item 2 r = me] plan-rows
+    set predecessor-tasks other predecessor-tasks
+  ]
+end
+
+;; Random precedence network: with probability dependency-probability a task gets 1 to 3
+;; predecessors chosen among the tasks created before it, so the network can never have cycles.
+to assign-random-predecessors
+  ask tasks [
+    let my-who who
+    set predecessor-tasks no-turtles
+    if random-float 1 < dependency-probability [
+      let earlier tasks with [who < my-who]
+      if any? earlier [
+        set predecessor-tasks n-of (min (list (1 + random 3) count earlier)) earlier
+      ]
+    ]
+  ]
+end
+
+;; Plan (baseline) of the random tasks: the ideal execution with no delay and no advance.
+;; At most employees-number * assigned-tasks-employee tasks are worked on in parallel at
+;; 1 hour per tick; a task starts, in creation order, as soon as all its predecessors are
+;; finished and a slot is free, and it takes planned-hours ticks.
+to schedule-random-plan
+  let slots employees-number * assigned-tasks-employee
+  let t 0
+  ask tasks [
+    set start-tick -1
+    set finish-tick -1
+  ]
+  while [any? tasks with [start-tick < 0]] [
+    let free slots - count tasks with [start-tick >= 0 and finish-tick > t]
+    if free > 0 [
+      let ready sort tasks with [start-tick < 0 and not any? predecessor-tasks with [start-tick < 0 or finish-tick > t]]
+      foreach sublist ready 0 (min (list free length ready)) [ the-task ->
+        ask the-task [
+          set start-tick t
+          set finish-tick t + planned-hours
+        ]
+      ]
+    ]
+    set t t + 1
+  ]
 end
 
 to setup-employees
@@ -173,9 +292,10 @@ to go
     user-message "With probability-of-delay = 1 and probability-of-advance = 0 no task can ever progress."
     stop
   ]
-  processing-the-tasks
-  tick  ;; tick before the stop check so the final state reaches the plots
+  ;; checked first, so the last step of the project is executed, ticked, plotted and recorded
   if count tasks with [color = green] = count tasks [stop]
+  processing-the-tasks
+  tick
 end
 
 ;;PROCEDURES SECTION
@@ -190,16 +310,29 @@ to the-employee-picks-tasks-from-the-to-do-backlog
   foreach sort employees[
     the-employee -> ask the-employee [
       if count out-assignment-neighbors with [status = "in-progress"] < assigned-tasks-employee [
-        if not empty? backlog [
-          ;; the backlog is ordered by priority (lowest value first), then by creation order
-          let next-task first backlog
-          set backlog but-first backlog
+        let next-task next-ready-task
+        if next-task != nobody [
+          ifelse next-task = first backlog
+            [set backlog but-first backlog]
+            [set backlog remove next-task backlog]
           create-assignment-to next-task
         ]
       ]
     ]
   ]
   tasks-board-update
+end
+
+;; First task of the backlog (creation order) whose predecessors are all done, or nobody.
+to-report next-ready-task
+  if empty? backlog [report nobody]
+  let ready filter [t -> [ready?] of t] backlog
+  report ifelse-value empty? ready [nobody][first ready]
+end
+
+;; task context: finish-to-start dependencies (relation type and lag from the plan are ignored)
+to-report ready?
+  report not any? predecessor-tasks with [status != "done"]
 end
 
 to the-employee-moves-assignments-to-the-in-progress-queue
@@ -249,12 +382,21 @@ to create-team
   ]
 end
 
-; procedure to write some turtle properties to a file
+; procedure to write the tasks, with their plan, to a CSV file (one row per task, with a header)
 to write-tasks-to-csv
-  ; we use the `of` primitive to make a list of lists and then
-  ; use the csv extension to write that list of lists to a file.
-  ; csv:to-file "tasks.csv" [ (list task-number task-description planned-start planned-finish planned-hours (word ((complete-hours / planned-hours) * 100) "%") actual-hours) ] of tasks
-  csv:to-file "output/tasks.csv" [ (list task-number project-breakdown-code task-description planned-start planned-finish planned-hours (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0]) actual-hours) ] of tasks
+  let header (list "task-number" "project-breakdown-code" "task-description" "planned-start" "planned-finish" "planned-hours" "complete-ratio" "actual-hours" "start-tick" "finish-tick" "predecessors")
+  let rows map [t -> [
+    (list task-number project-breakdown-code task-description planned-start planned-finish planned-hours
+      (ifelse-value planned-hours > 0 [complete-hours / planned-hours] [0])
+      actual-hours start-tick finish-tick predecessor-numbers)
+  ] of t] sort-on [who] tasks
+  csv:to-file "output/tasks.csv" fput header rows
+end
+
+;; task context: task numbers of the predecessors, separated by spaces
+to-report predecessor-numbers
+  let ids sort [task-number] of predecessor-tasks
+  report ifelse-value empty? ids [""] [reduce [[a b] -> (word a " " b)] ids]
 end
 
 ; procedure to write some turtle properties to a file
@@ -420,15 +562,8 @@ end]]></code>
     </plot>
     <monitor x="458" precision="17" y="470" height="60" fontSize="11" width="274" display="Performance Measurement Baseline Duration">PMB-Duration</monitor>
     <slider x="0" step="1" y="230" max="10" width="275" display="assigned-tasks-employee" height="50" min="1" direction="Horizontal" default="3.0" variable="assigned-tasks-employee"></slider>
-    <chooser x="1" y="640" height="60" variable="csv-file" current="1" width="285" display="csv-file">
-      <choice type="string" value="input/Sip-task-info.csv"></choice>
-      <choice type="string" value="input/Software-Development-Plan.csv"></choice>
-    </chooser>
+    <slider x="0" step="0.01" y="640" max="1" width="275" display="dependency-probability" height="50" min="0" direction="Horizontal" default="0.3" variable="dependency-probability"></slider>
     <switch x="0" y="705" height="40" on="false" variable="load-file" width="109" display="load-file"></switch>
-    <chooser x="112" y="705" height="40" variable="priority-order" current="0" width="165" display="priority-order">
-      <choice type="string" value="lowest-first"></choice>
-      <choice type="string" value="highest-first"></choice>
-    </chooser>
     <slider x="0" step="0.01" y="175" max="1" width="275" display="probability-of-advance" height="50" min="0" direction="Horizontal" default="0.2" variable="probability-of-advance"></slider>
     <button x="0" y="750" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="277" display="Write tasks to tasks.csv">write-tasks-to-csv</button>
     <plot x="1074" autoPlotX="true" yMax="1.0" autoPlotY="true" y="402" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="0.0" width="275" display="Cost Performance Index at Conclusion">
@@ -463,7 +598,7 @@ The model includes the following entities: task and employee. The workspaces and
 
 In the model, agents represent employees executing tasks in a simple, agile production system. Each agent takes a job from the backlog and performs it in the set time. The interface displays employees and tasks on a Kanban-like task board. To-do tasks are in the red card column, jobs in progress are in the yellow card column, and completed tasks are in the green card column.
 
-The most critical processes of the model, which are repeated every time step, are: firstly, the employee picks the next task from the to-do backlog (ordered by priority, then by creation order; the priority-order chooser selects whether the lowest or the highest priority value is picked first). Then the employee moves assignments to the in-progress queue. Finally, the employee achieves and carries tasks to the done cue.
+The most critical processes of the model, which are repeated every time step, are: firstly, the employee picks the next task from the to-do backlog (in creation order) that is ready, that is, whose predecessor tasks are all done. Then the employee moves assignments to the in-progress queue. Finally, the employee achieves and carries tasks to the done cue.
 
 The most important design concepts of the model are a task backlog, a task board, players (or employees), a cost and schedule plan, and performance metrics.
 
@@ -484,7 +619,7 @@ EVM consists of the following primary and derived data elements. Each data point
 
 #### Main values
 
-  * Planned Value, PV: a time-phased linear baseline, BAC * min(1, ticks / PMB-Duration).
+  * Planned Value, PV: a time-phased baseline in which every task earns its planned hours linearly between its planned start and finish.
   * Earned Value, EV.
   * Actual Cost, AC.
   * Budget at Completion, BAC.
@@ -546,10 +681,20 @@ Cost Performance Index at Conclusion, CPIAC.
 
 #### Schedule baseline and time forecasting
 
-  * Performance Measurement Baseline duration, PMB-Duration = BAC / min(employees-number * assigned-tasks-employee, number of tasks). It is the ideal duration in ticks if every employee works all assigned tasks in parallel at one hour per tick. It is calculated once at setup, so moving sliders during a run does not rewrite the plan.
-  * Earned Schedule, ES = PMB-Duration * EV / BAC: the time at which the baseline planned to have earned the current EV.
+  * Performance Measurement Baseline duration, PMB-Duration: the planned finish, in ticks, of the last task of the plan. The plan is calculated once at setup, so moving sliders during a run does not rewrite it.
+  * Earned Schedule, ES: the time at which the baseline planned to have earned the current EV.
   * Time-based schedule index, SPIt = ES / ticks.
   * Time Estimate at Completion, EACt = PMB-Duration / SPIt. It shows "n/a" until some value has been earned and equals the real duration when the project finishes.
+
+#### The plan: where the dates and dependencies come from
+
+Random tasks (default). With probability dependency-probability each task gets 1 to 3 predecessors chosen among the tasks created before it, so there are no cycles. The planned start and finish of every task come from simulating the ideal execution at setup, with no delay and no advance: at most employees-number * assigned-tasks-employee tasks are worked on in parallel at one hour per tick, and a task starts, in creation order, as soon as its predecessors are finished and a slot is free.
+
+MS Project CSV (Software-Development-Plan.csv, desktop version, load-file switch):
+
+  * Dates: each task's planned start and finish are converted to working hours (8 hours per business day, 8:00-12:00 and 1:00-5:00, weekends skipped; 1 tick = 1 working hour), counted from the earliest start. PV is then the sum, over all tasks, of the planned hours earned linearly between each task's start and finish, and PMB-Duration is the planned finish of the last task. ES is found by searching that curve for the time at which PV equals the current EV.
+  * Dependencies: a task can only be picked up once all its predecessors are done (finish-to-start). The relation type and lag of the plan (for example "FS-11.25 days") are ignored. Summary rows and milestones are not tasks of the model, so a task that depends on one inherits that row's own predecessors.
+  * Resource names in the plan are ignored: any employee can pick any task.
 
 When a ratio has no data yet, SPI and CPI show the neutral value 1, SV%, CV% and VAC% show 0, and TCPI and EAC2 show "n/a" if they are undefined.
 
@@ -558,7 +703,7 @@ When a ratio has no data yet, SPI and CPI show the neutral value 1, SV%, CV% and
 ### Setup
 
   1. First, establish the number of employees involved and the number of tasks to perform on the project.
-  2. Second, the setup procedure will generate the number of tasks selected with random units of effort (Fibonacci-like values from 1 to 233 hours) and the desired set of employees, or load the tasks from a CSV file.
+  2. Second, the setup procedure will generate the number of tasks selected with random units of effort (Fibonacci-like values from 1 to 233 hours) and the desired set of employees, or load the tasks from the MS Project plan. Random tasks get random predecessors (dependency-probability).
   3. Third, establish the probability that a worked hour is lost (probability-of-delay) and the probability that a task gains an extra hour of progress (probability-of-advance). For an ideal scenario, the chance is zero in both cases. If delay is 1 and advance is 0 no task can ever progress, and the model refuses to run.
   4. Finally, decide how many tasks each worker will be able to execute simultaneously. The budget at completion is the sum of all the story points or units of effort defined for each job.
 
@@ -582,7 +727,7 @@ Note that although the probabilities of delay and advance are equal, the project
 ## THINGS TO TRY
 
 1. Try to create different configurations by imagining scenarios according to experience. 
-2. Try loading sample tasks from the CSV files. One sample file comes from a software development project with 12299 tasks. The second file comes from a Microsoft Project sample file with a basic software development project template with 61 tasks. 
+2. Try loading the sample plan with the load-file switch (desktop version). It comes from a Microsoft Project sample file with a basic software development project template with 61 tasks, with dates and predecessors. 
 
 ## EXTENDING THE MODEL
 
@@ -1458,9 +1603,6 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
         <enumeratedValueSet variable="load-file">
           <value value="true"></value>
         </enumeratedValueSet>
-        <enumeratedValueSet variable="csv-file">
-          <value value="&quot;input/Software-Development-Plan.csv&quot;"></value>
-        </enumeratedValueSet>
       </constants>
     </experiment>
     <experiment name="experiment_small" repetitions="1" sequentialRunOrder="false" runMetricsEveryStep="true">
@@ -1499,8 +1641,58 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
         <enumeratedValueSet variable="load-file">
           <value value="true"></value>
         </enumeratedValueSet>
-        <enumeratedValueSet variable="csv-file">
-          <value value="&quot;input/Software-Development-Plan.csv&quot;"></value>
+      </constants>
+    </experiment>
+    <experiment name="regression-no-delay" repetitions="3" sequentialRunOrder="true" runMetricsEveryStep="true">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>PMB-Duration</metric>
+        <metric>count tasks</metric>
+        <metric>count tasks with [status = "done"]</metric>
+        <metric>count tasks with [status != "to-do" and any? predecessor-tasks with [status != "done"]]</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="load-file">
+          <value value="false"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="number-of-tasks">
+          <value value="60"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-delay">
+          <value value="0"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-advance">
+          <value value="0"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="employees-number">
+          <value value="1"></value>
+          <value value="3"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="assigned-tasks-employee">
+          <value value="1"></value>
+          <value value="3"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="dependency-probability">
+          <value value="0"></value>
+          <value value="0.5"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+    <experiment name="regression-plan-csv" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="true">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>PMB-Duration</metric>
+        <metric>count tasks</metric>
+        <metric>count tasks with [status = "done"]</metric>
+        <metric>count tasks with [status != "to-do" and any? predecessor-tasks with [status != "done"]]</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="load-file">
+          <value value="true"></value>
         </enumeratedValueSet>
       </constants>
     </experiment>

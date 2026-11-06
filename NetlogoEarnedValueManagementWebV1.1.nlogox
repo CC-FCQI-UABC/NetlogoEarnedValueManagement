@@ -8,7 +8,7 @@
 ;__includes["EarnedValueManagement.nls"]
 
 ;;GLOBAL VARIABLES
-globals [backlog pmb-baseline]
+globals [backlog pmb-baseline plan-rows]
 
 ;;BREED DEFINITIONS
 directed-link-breed [assignments assignment]   ;; employee -> task
@@ -37,12 +37,16 @@ tasks-own [
   planned-hours
   complete-hours
   actual-hours
+  start-tick          ;; planned start / finish in working hours since project start (dated plan only)
+  finish-tick
+  predecessor-tasks   ;; agentset of tasks that must be done first (dependencies only)
 ]
 
 
 ;;SETUP-SECTION
 to setup
   clear-all
+  set plan-rows []
   setup-tasks
   setup-employees
   set-baseline
@@ -50,39 +54,71 @@ to setup
 end
 
 to setup-tasks
+  create-tasks number-of-tasks [
+    set color red
+    set shape "square"
+    set status "to-do"
+    set task-number who + 1
+    set task-description "task-description"
+    set priority 0
+    set project-code 0
+    set project-breakdown-code 0
+    set category 0
+    set sub-category 0
+    set planned-start "01/01/2022"
+    set planned-finish "01/02/2022"
+    set planned-hours item random 12 [1 2 3 5 8 13 21 34 55 89 144 233]
+    set start-tick -1
+    set finish-tick -1
+    set predecessor-tasks no-turtles
+    set complete-hours 0
+    set actual-hours 0]
+  assign-random-predecessors
+  schedule-random-plan
 
-    create-tasks number-of-tasks [
-      set color red
-      set shape "square"
-      set status "to-do"
-      set task-number 100
-      set task-description "task-description"
-      set priority 0
-      set project-code 0
-      set project-breakdown-code 0
-      set category 0
-      set sub-category 0
-      set planned-start "01/01/2022"
-      set planned-finish "01/02/2022"
-      set planned-hours item random 12 [1 2 3 5 8 13 21 34 55 89 144 233]
-      set complete-hours 0
-      set actual-hours 0]
-
-  set backlog sort-by [[a b] -> earlier-in-backlog? a b] tasks
+  set backlog sort tasks
   tasks-board-update
 end
 
-;; Backlog order: lowest priority value first; ties (and non-numeric priorities, treated as 0)
-;; are broken by creation order.
-to-report earlier-in-backlog? [a b]
-  let pa [numeric-priority] of a
-  let pb [numeric-priority] of b
-  report pa < pb or (pa = pb and [who] of a < [who] of b)
+;; Random precedence network: with probability dependency-probability a task gets 1 to 3
+;; predecessors chosen among the tasks created before it, so the network can never have cycles.
+to assign-random-predecessors
+  ask tasks [
+    let my-who who
+    set predecessor-tasks no-turtles
+    if random-float 1 < dependency-probability [
+      let earlier tasks with [who < my-who]
+      if any? earlier [
+        set predecessor-tasks n-of (min (list (1 + random 3) count earlier)) earlier
+      ]
+    ]
+  ]
 end
 
-;; task context: priority as a number, or 0 if the source data had none
-to-report numeric-priority
-  report ifelse-value is-number? priority [priority][0]
+;; Plan (baseline) of the random tasks: the ideal execution with no delay and no advance.
+;; At most employees-number * assigned-tasks-employee tasks are worked on in parallel at
+;; 1 hour per tick; a task starts, in creation order, as soon as all its predecessors are
+;; finished and a slot is free, and it takes planned-hours ticks.
+to schedule-random-plan
+  let slots employees-number * assigned-tasks-employee
+  let t 0
+  ask tasks [
+    set start-tick -1
+    set finish-tick -1
+  ]
+  while [any? tasks with [start-tick < 0]] [
+    let free slots - count tasks with [start-tick >= 0 and finish-tick > t]
+    if free > 0 [
+      let ready sort tasks with [start-tick < 0 and not any? predecessor-tasks with [start-tick < 0 or finish-tick > t]]
+      foreach sublist ready 0 (min (list free length ready)) [ the-task ->
+        ask the-task [
+          set start-tick t
+          set finish-tick t + planned-hours
+        ]
+      ]
+    ]
+    set t t + 1
+  ]
 end
 
 to setup-employees
@@ -103,9 +139,10 @@ to go
     user-message "With probability-of-delay = 1 and probability-of-advance = 0 no task can ever progress."
     stop
   ]
-  processing-the-tasks
-  tick  ;; tick before the stop check so the final state reaches the plots
+  ;; checked first, so the last step of the project is executed, ticked, plotted and recorded
   if count tasks with [color = green] = count tasks [stop]
+  processing-the-tasks
+  tick
 end
 
 ;;PROCEDURES SECTION
@@ -120,16 +157,29 @@ to the-employee-picks-tasks-from-the-to-do-backlog
   foreach sort employees[
     the-employee -> ask the-employee [
       if count out-assignment-neighbors with [status = "in-progress"] < assigned-tasks-employee [
-        if not empty? backlog [
-          ;; the backlog is ordered by priority (lowest value first), then by creation order
-          let next-task first backlog
-          set backlog but-first backlog
+        let next-task next-ready-task
+        if next-task != nobody [
+          ifelse next-task = first backlog
+            [set backlog but-first backlog]
+            [set backlog remove next-task backlog]
           create-assignment-to next-task
         ]
       ]
     ]
   ]
   tasks-board-update
+end
+
+;; First task of the backlog (creation order) whose predecessors are all done, or nobody.
+to-report next-ready-task
+  if empty? backlog [report nobody]
+  let ready filter [t -> [ready?] of t] backlog
+  report ifelse-value empty? ready [nobody][first ready]
+end
+
+;; task context: finish-to-start dependencies (relation type and lag from the plan are ignored)
+to-report ready?
+  report not any? predecessor-tasks with [status != "done"]
 end
 
 to the-employee-moves-assignments-to-the-in-progress-queue
@@ -232,6 +282,8 @@ end
 ;; Budget at Completion: total planned hours of all tasks
 ;; Budget at Completion: total planned hours of all tasks
 ;; Budget at Completion: total planned hours of all tasks
+;; Budget at Completion: total planned hours of all tasks
+;; Budget at Completion: total planned hours of all tasks
 to-report BAC
   report sum [planned-hours] of tasks
 end
@@ -242,20 +294,29 @@ to-report PMB-Duration
   report pmb-baseline
 end
 
-;; Called once at the end of setup. The ideal plan assumes every employee works
-;; assigned-tasks-employee tasks in parallel at 1 hour per tick each, but never more
-;; parallel work than there are tasks.
+;; Called once at the end of setup: the baseline duration is the planned finish
+;; (in ticks) of the last task of the plan.
 to set-baseline
-  let capacity min (list (count employees * assigned-tasks-employee) (count tasks))
-  ifelse capacity > 0
-    [set pmb-baseline BAC / capacity]
+  ifelse any? tasks
+    [set pmb-baseline max [finish-tick] of tasks]
     [set pmb-baseline 0]
 end
 
-;; Planned Value: time-phased linear baseline, BAC * (elapsed time / planned duration), capped at BAC
-to-report PV
+;; Planned value accumulated by time t: every task earns its planned hours linearly
+;; between its planned start and finish.
+to-report planned-value-at [t]
   if BAC <= 0 or PMB-Duration <= 0 [report 0]
-  report BAC * min (list 1 (ticks / PMB-Duration))
+  report sum [task-planned-value-at t] of tasks
+end
+
+;; task context
+to-report task-planned-value-at [t]
+  if finish-tick <= start-tick [report ifelse-value t >= finish-tick [planned-hours][0]]
+  report planned-hours * max (list 0 min (list 1 ((t - start-tick) / (finish-tick - start-tick))))
+end
+
+to-report PV
+  report planned-value-at ticks
 end
 
 ;; Actual Cost: hours actually spent on tasks
@@ -344,7 +405,19 @@ end
 
 ;; Earned Schedule: the time at which the baseline planned to have earned the current EV
 to-report ES
-  ifelse BAC > 0 [report PMB-Duration * min (list 1 (EV / BAC))][report 0]
+  if BAC <= 0 [report 0]
+  let earned min (list EV BAC)
+  if earned <= 0 [report 0]
+  ;; earliest time at which the baseline planned to have earned that much (binary search + interpolation)
+  let lo 0
+  let hi PMB-Duration
+  while [hi - lo > 1] [
+    let mid floor ((lo + hi) / 2)
+    ifelse planned-value-at mid >= earned [set hi mid][set lo mid]
+  ]
+  let pl planned-value-at lo
+  let ph planned-value-at hi
+  report ifelse-value ph > pl [lo + (earned - pl) / (ph - pl)][hi]
 end
 
 ;; Time-based schedule performance index (earned schedule / actual time)
@@ -464,6 +537,7 @@ end]]></code>
     </plot>
     <monitor x="458" precision="17" y="470" height="60" fontSize="11" width="274" display="Performance Measurement Baseline Duration">PMB-Duration</monitor>
     <slider x="0" step="1" y="230" max="10" width="275" display="assigned-tasks-employee" height="50" min="1" direction="Horizontal" default="3.0" variable="assigned-tasks-employee"></slider>
+    <slider x="0" step="0.01" y="640" max="1" width="275" display="dependency-probability" height="50" min="0" direction="Horizontal" default="0.3" variable="dependency-probability"></slider>
     <slider x="0" step="0.01" y="175" max="1" width="275" display="probability-of-advance" height="50" min="0" direction="Horizontal" default="0.2" variable="probability-of-advance"></slider>
     <plot x="1074" autoPlotX="true" yMax="1.0" autoPlotY="true" y="402" xMin="0.0" height="192" legend="true" xMax="10.0" yMin="0.0" width="275" display="Cost Performance Index at Conclusion">
       <setup></setup>
@@ -496,7 +570,7 @@ The model includes the following entities: task and employee. The workspaces and
 
 In the model, agents represent employees executing tasks in a simple, agile production system. Each agent takes a job from the backlog and performs it in the set time. The interface displays employees and tasks on a Kanban-like task board. To-do tasks are in the red card column, jobs in progress are in the yellow card column, and completed tasks are in the green card column.
 
-The most critical processes of the model, which are repeated every time step, are: firstly, the employee picks the next task from the to-do backlog (ordered by priority, lowest value first, then by creation order). Then the employee moves assignments to the in-progress queue. Finally, the employee achieves and carries tasks to the done cue.
+The most critical processes of the model, which are repeated every time step, are: firstly, the employee picks the next task from the to-do backlog (in creation order) that is ready, that is, whose predecessor tasks are all done. Then the employee moves assignments to the in-progress queue. Finally, the employee achieves and carries tasks to the done cue.
 
 The most important design concepts of the model are a task backlog, a task board, players (or employees), a cost and schedule plan, and performance metrics.
 
@@ -517,7 +591,7 @@ EVM consists of the following primary and derived data elements. Each data point
 
 #### Main values
 
-  * Planned Value, PV: a time-phased linear baseline, BAC * min(1, ticks / PMB-Duration).
+  * Planned Value, PV: a time-phased baseline in which every task earns its planned hours linearly between its planned start and finish.
   * Earned Value, EV.
   * Actual Cost, AC.
   * Budget at Completion, BAC.
@@ -579,10 +653,20 @@ Cost Performance Index at Conclusion, CPIAC.
 
 #### Schedule baseline and time forecasting
 
-  * Performance Measurement Baseline duration, PMB-Duration = BAC / min(employees-number * assigned-tasks-employee, number of tasks). It is the ideal duration in ticks if every employee works all assigned tasks in parallel at one hour per tick. It is calculated once at setup, so moving sliders during a run does not rewrite the plan.
-  * Earned Schedule, ES = PMB-Duration * EV / BAC: the time at which the baseline planned to have earned the current EV.
+  * Performance Measurement Baseline duration, PMB-Duration: the planned finish, in ticks, of the last task of the plan. The plan is calculated once at setup, so moving sliders during a run does not rewrite it.
+  * Earned Schedule, ES: the time at which the baseline planned to have earned the current EV.
   * Time-based schedule index, SPIt = ES / ticks.
   * Time Estimate at Completion, EACt = PMB-Duration / SPIt. It shows "n/a" until some value has been earned and equals the real duration when the project finishes.
+
+#### The plan: where the dates and dependencies come from
+
+Random tasks (default). With probability dependency-probability each task gets 1 to 3 predecessors chosen among the tasks created before it, so there are no cycles. The planned start and finish of every task come from simulating the ideal execution at setup, with no delay and no advance: at most employees-number * assigned-tasks-employee tasks are worked on in parallel at one hour per tick, and a task starts, in creation order, as soon as its predecessors are finished and a slot is free.
+
+MS Project CSV (Software-Development-Plan.csv, desktop version, load-file switch):
+
+  * Dates: each task's planned start and finish are converted to working hours (8 hours per business day, 8:00-12:00 and 1:00-5:00, weekends skipped; 1 tick = 1 working hour), counted from the earliest start. PV is then the sum, over all tasks, of the planned hours earned linearly between each task's start and finish, and PMB-Duration is the planned finish of the last task. ES is found by searching that curve for the time at which PV equals the current EV.
+  * Dependencies: a task can only be picked up once all its predecessors are done (finish-to-start). The relation type and lag of the plan (for example "FS-11.25 days") are ignored. Summary rows and milestones are not tasks of the model, so a task that depends on one inherits that row's own predecessors.
+  * Resource names in the plan are ignored: any employee can pick any task.
 
 When a ratio has no data yet, SPI and CPI show the neutral value 1, SV%, CV% and VAC% show 0, and TCPI and EAC2 show "n/a" if they are undefined.
 
@@ -591,7 +675,7 @@ When a ratio has no data yet, SPI and CPI show the neutral value 1, SV%, CV% and
 ### Setup
 
   1. First, establish the number of employees involved and the number of tasks to perform on the project.
-  2. Second, the setup procedure will generate the number of tasks selected with random units of effort (Fibonacci-like values from 1 to 233 hours) and the desired set of employees, or load the tasks from a CSV file.
+  2. Second, the setup procedure will generate the number of tasks selected with random units of effort (Fibonacci-like values from 1 to 233 hours) and the desired set of employees, or load the tasks from the MS Project plan. Random tasks get random predecessors (dependency-probability).
   3. Third, establish the probability that a worked hour is lost (probability-of-delay) and the probability that a task gains an extra hour of progress (probability-of-advance). For an ideal scenario, the chance is zero in both cases. If delay is 1 and advance is 0 no task can ever progress, and the model refuses to run.
   4. Finally, decide how many tasks each worker will be able to execute simultaneously. The budget at completion is the sum of all the story points or units of effort defined for each job.
 
@@ -615,7 +699,7 @@ Note that although the probabilities of delay and advance are equal, the project
 ## THINGS TO TRY
 
 1. Try to create different configurations by imagining scenarios according to experience. 
-2. Try loading sample tasks from the CSV files. One sample file comes from a software development project with 12299 tasks. The second file comes from a Microsoft Project sample file with a basic software development project template with 61 tasks. 
+2. Try loading the sample plan with the load-file switch (desktop version). It comes from a Microsoft Project sample file with a basic software development project template with 61 tasks, with dates and predecessors. 
 
 ## EXTENDING THE MODEL
 
@@ -1488,12 +1572,6 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
         <steppedValueSet variable="assigned-tasks-employee" first="1" step="1" last="3"></steppedValueSet>
         <steppedValueSet variable="probability-of-delay" first="0" step="0.1" last="0.9"></steppedValueSet>
         <steppedValueSet variable="probability-of-advance" first="0" step="0.1" last="0.9"></steppedValueSet>
-        <enumeratedValueSet variable="load-file">
-          <value value="true"></value>
-        </enumeratedValueSet>
-        <enumeratedValueSet variable="csv-file">
-          <value value="&quot;input/Software-Development-Plan.csv&quot;"></value>
-        </enumeratedValueSet>
       </constants>
     </experiment>
     <experiment name="experiment_small" repetitions="1" sequentialRunOrder="false" runMetricsEveryStep="true">
@@ -1529,11 +1607,39 @@ Netlogo Earned Value Management v1.0.0 © 2022 by Manuel Castañón-Puga is lice
         <enumeratedValueSet variable="probability-of-delay">
           <value value="0.2"></value>
         </enumeratedValueSet>
-        <enumeratedValueSet variable="load-file">
-          <value value="true"></value>
+      </constants>
+    </experiment>
+    <experiment name="regression-no-delay" repetitions="3" sequentialRunOrder="true" runMetricsEveryStep="true">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>PMB-Duration</metric>
+        <metric>count tasks</metric>
+        <metric>count tasks with [status = "done"]</metric>
+        <metric>count tasks with [status != "to-do" and any? predecessor-tasks with [status != "done"]]</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="number-of-tasks">
+          <value value="60"></value>
         </enumeratedValueSet>
-        <enumeratedValueSet variable="csv-file">
-          <value value="&quot;input/Software-Development-Plan.csv&quot;"></value>
+        <enumeratedValueSet variable="probability-of-delay">
+          <value value="0"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="probability-of-advance">
+          <value value="0"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="employees-number">
+          <value value="1"></value>
+          <value value="3"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="assigned-tasks-employee">
+          <value value="1"></value>
+          <value value="3"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="dependency-probability">
+          <value value="0"></value>
+          <value value="0.5"></value>
         </enumeratedValueSet>
       </constants>
     </experiment>

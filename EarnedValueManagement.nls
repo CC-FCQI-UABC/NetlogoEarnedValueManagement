@@ -9,20 +9,29 @@ to-report PMB-Duration
   report pmb-baseline
 end
 
-;; Called once at the end of setup. The ideal plan assumes every employee works
-;; assigned-tasks-employee tasks in parallel at 1 hour per tick each, but never more
-;; parallel work than there are tasks.
+;; Called once at the end of setup: the baseline duration is the planned finish
+;; (in ticks) of the last task of the plan.
 to set-baseline
-  let capacity min (list (count employees * assigned-tasks-employee) (count tasks))
-  ifelse capacity > 0
-    [set pmb-baseline BAC / capacity]
+  ifelse any? tasks
+    [set pmb-baseline max [finish-tick] of tasks]
     [set pmb-baseline 0]
 end
 
-;; Planned Value: time-phased linear baseline, BAC * (elapsed time / planned duration), capped at BAC
-to-report PV
+;; Planned value accumulated by time t: every task earns its planned hours linearly
+;; between its planned start and finish.
+to-report planned-value-at [t]
   if BAC <= 0 or PMB-Duration <= 0 [report 0]
-  report BAC * min (list 1 (ticks / PMB-Duration))
+  report sum [task-planned-value-at t] of tasks
+end
+
+;; task context
+to-report task-planned-value-at [t]
+  if finish-tick <= start-tick [report ifelse-value t >= finish-tick [planned-hours][0]]
+  report planned-hours * max (list 0 min (list 1 ((t - start-tick) / (finish-tick - start-tick))))
+end
+
+to-report PV
+  report planned-value-at ticks
 end
 
 ;; Actual Cost: hours actually spent on tasks
@@ -111,7 +120,19 @@ end
 
 ;; Earned Schedule: the time at which the baseline planned to have earned the current EV
 to-report ES
-  ifelse BAC > 0 [report PMB-Duration * min (list 1 (EV / BAC))][report 0]
+  if BAC <= 0 [report 0]
+  let earned min (list EV BAC)
+  if earned <= 0 [report 0]
+  ;; earliest time at which the baseline planned to have earned that much (binary search + interpolation)
+  let lo 0
+  let hi PMB-Duration
+  while [hi - lo > 1] [
+    let mid floor ((lo + hi) / 2)
+    ifelse planned-value-at mid >= earned [set hi mid][set lo mid]
+  ]
+  let pl planned-value-at lo
+  let ph planned-value-at hi
+  report ifelse-value ph > pl [lo + (earned - pl) / (ph - pl)][hi]
 end
 
 ;; Time-based schedule performance index (earned schedule / actual time)
