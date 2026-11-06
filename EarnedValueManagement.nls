@@ -102,6 +102,7 @@ to-report EV
   report cache-ev
 end
 
+;; ---- Ratios against the budget (0 to 1, used by the "Earned value" plot)
 to-report PV%
   ifelse BAC > 0 [report (PV / BAC)][report 1]
 end
@@ -114,14 +115,18 @@ to-report AC%
   ifelse BAC > 0 [report (AC / BAC)][report 1]
 end
 
+;; ---- Variances: positive is good (ahead of plan / under budget)
+;; Schedule Variance, in hours of work: EV - PV
 to-report SV
   report EV - PV
 end
 
+;; Cost Variance, in hours: EV - AC
 to-report CV
   report EV - AC
 end
 
+;; relative variances (0 while there is nothing to compare with)
 to-report SV%
   ifelse PV > 0 [report SV / PV][report 0]
 end
@@ -156,14 +161,17 @@ to-report EAC2
   ifelse CPI > 0 [report BAC / CPI][report "n/a"]
 end
 
+;; Estimate to Complete: hours still to spend (EAC1 - AC)
 to-report ETC
   report EAC1 - AC
 end
 
+;; Estimate to Complete under EAC2 (current cost performance continues)
 to-report ETC2
   ifelse is-number? EAC2 [report EAC2 - AC][report "n/a"]
 end
 
+;; Variance at Completion: budget minus estimate (BAC - EAC1)
 to-report VAC
   report BAC - EAC1
 end
@@ -172,6 +180,7 @@ to-report VAC%
   ifelse BAC > 0 [report VAC / BAC][report 0]
 end
 
+;; Cost performance needed/obtained at completion: BAC / EAC1
 to-report CPIAC
   ifelse EAC1 > 0 [report BAC / EAC1][report 1]
 end
@@ -187,6 +196,7 @@ to-report ES
   report cache-es
 end
 
+;; Earned Schedule (uncached): find the time at which the baseline PV equals the EV earned so far
 to-report compute-es
   if BAC <= 0 [report 0]
   let earned min (list EV BAC)

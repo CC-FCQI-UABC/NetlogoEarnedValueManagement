@@ -1,6 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <model version="NetLogo 7.0.4" snapToGrid="false">
-  <code><![CDATA[;;EXTENSIONS
+  <code><![CDATA[;; ============================================================================================
+;; Earned Value Management agent-based model (desktop version)
+;;
+;; Overview
+;;  - Tasks (cards on a kanban board) are done by employees. 1 tick = 1 working hour.
+;;  - The project plan (baseline) comes either from an MS Project CSV (load-file on) or from random
+;;    tasks. Both give every task planned-hours, start-tick/finish-tick and predecessor links.
+;;  - Each tick: free employees pick ready tasks (to-do -> in-progress), then every in-progress task
+;;    gets an hour of work, then finished tasks move to done (see go).
+;;  - EarnedValueManagement.nls holds the EVM indicators (PV, EV, AC, SPI, CPI, EAC, ES, ...).
+;;  - Plan errors never crash the model: they are reported in plan-error and no task is created.
+;; Layout of this file: setup -> plan loading (CSV) -> dates/links helpers -> random plan ->
+;; employees -> execution (go) -> CSV output -> task board drawing.
+;; ============================================================================================
+
+;;EXTENSIONS
 
 extensions [ csv ]
 
@@ -8,6 +23,15 @@ extensions [ csv ]
 __includes["EarnedValueManagement.nls"]
 
 ;;GLOBAL VARIABLES
+;; backlog          list of the tasks still waiting for an employee, in creation order
+;; pmb-baseline     planned duration of the project in ticks (frozen at setup, see set-baseline)
+;; plan-rows        every row of the CSV (also summary rows and milestones) + its line number as last item
+;; bac-total        Budget at Completion (sum of planned-hours), calculated once at setup
+;; cache-*          per-tick caches of EV, AC, PV and ES (see refresh-evm-cache)
+;; pv-event-*       baseline planned-value curve as sorted events (see build-pv-curve)
+;; board-scale      cards per patch side on the task board (grows when there are many tasks)
+;; plan-error       text of the first problem found in the plan file, "" if none
+;; plan-override    plan file path used instead of the chooser (tests), "" for the chooser
 globals [backlog pmb-baseline plan-rows bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates board-scale plan-error plan-override]
 
 ;;BREED DEFINITIONS
@@ -18,14 +42,14 @@ breed [tasks task]
 
 ;AGENT PROPERTIES DEF SECTION
 employees-own [
-  employee-number
+  employee-number     ;; sequential id, 1..employees-number
   status
   role
   motivation
 ]
 
 tasks-own [
-  status
+  status              ;; "to-do", "in-progress" or "done" (the card color follows: red, yellow, green)
   task-number
   task-description
   priority
@@ -48,6 +72,7 @@ tasks-own [
 
 ;;SETUP-SECTION
 to setup
+  ;; button entry point: use the plan file selected in the chooser (or random tasks)
   setup-with-plan ""
 end
 
@@ -118,6 +143,8 @@ end
 
 ;; Processes one non-blank line of the plan file
 to read-plan-row [line n]
+  ;; columns (0-based items): 0 ID, 2 unique ID (task-number), 3 WBS, 4 name, 5 resources, 8 start,
+  ;; 9 finish, 10 work (hours), 11 priority, 12 predecessors
   let data csv:from-row line
   if length data < 13 [
     plan-fail (word "line " n ": expected at least 13 columns, found " length data)
@@ -181,6 +208,7 @@ to-report plan-row-problem [data]
 end
 
 to-report blank-text? [s]
+  ;; true if s is empty or only spaces, tabs and carriage returns
   report empty? filter [ch -> not member? ch [" " "\t" "\r"]] n-values length s [i -> item i s]
 end
 
@@ -194,6 +222,7 @@ to-report trim-text [s]
 end
 
 to-report integer-text? [s]
+  ;; true if s is made only of digits (used to validate the parts of a date)
   report length s > 0 and empty? filter [ch -> not member? ch "0123456789"] n-values length s [i -> item i s]
 end
 
@@ -231,6 +260,8 @@ end
 
 
 to setup-tasks
+  ;; creates the tasks of the plan; afterwards every task has planned-hours, start-tick,
+  ;; finish-tick and predecessor-links, whatever its origin
   ifelse load-file [
     read-csv
   ][
@@ -258,6 +289,7 @@ to setup-tasks
     schedule-random-plan
   ]
 
+  ;; each of the 3 columns holds 187 cards (11 x 17 patches) before the cards must shrink
   set board-scale max (list 1 ceiling sqrt (count tasks / 187))
   ask tasks [set size 1 / board-scale]
   set backlog sort tasks
@@ -281,6 +313,7 @@ end
 
 ;; days since 1970-01-01 (proleptic Gregorian calendar)
 to-report days-from-civil [y m d]
+  ;; standard civil-calendar algorithm (era / year-of-era / day-of-year), valid for any Gregorian date
   let yy ifelse-value m <= 2 [y - 1][y]
   let era floor (yy / 400)
   let yoe yy - era * 400
@@ -301,6 +334,8 @@ end
 ;; lead), or a percentage of the predecessor's duration when percent? is true. The lag unit defaults
 ;; to days (8 working hours), like MS Project.
 to-report parse-predecessor [raw-token]
+  ;; steps: trim -> id -> optional type (FS/SS/FF/SF) -> optional signed lag with unit or %
+  ;; any unreadable part makes the whole predecessor invalid ([]), never a silent default
   let token trim-text raw-token
   let id leading-number token
   if id < 0 [report []]
@@ -351,6 +386,7 @@ end
 
 ;; true if s is a plain decimal number such as "-11.25"
 to-report number-text? [s]
+  ;; true if s has only digits, dots and minus signs (a loose check: read-from-string errors on malformed numbers)
   report length s > 0 and length filter [ch -> not member? ch "0123456789.-"] n-values length s [i -> item i s] = 0
 end
 
@@ -521,6 +557,7 @@ to-report link-text [p]
 end
 
 to setup-employees
+  ;; employees are scattered below the board and all linked as a team (create-team)
   let next-number 1
   create-employees employees-number [
     setxy random-xcor (random 16) - 16
@@ -536,6 +573,7 @@ end
 
 ;;EXECUTION SECTION
 to go
+  ;; one tick = one working hour. Stops (button turns off) when everything is done or when no task can progress.
   if probability-of-delay >= 1 and probability-of-advance <= 0 [
     user-message "With probability-of-delay = 1 and probability-of-advance = 0 no task can ever progress."
     stop
@@ -548,6 +586,7 @@ end
 
 ;;PROCEDURES SECTION
 to processing-the-tasks
+  ;; the order matters: pick -> start -> work/finish. Gates (ready?, finish-allowed?) read the state of the previous step.
   the-employee-picks-tasks-from-the-to-do-backlog
   the-employee-moves-assignments-to-the-in-progress-queue
   the-employee-achieves-and-moves-tasks-to-the-done-cue
@@ -555,6 +594,7 @@ to processing-the-tasks
 end
 
 to the-employee-picks-tasks-from-the-to-do-backlog
+  ;; employees in who order (deterministic); each one with a free slot takes the first ready task of the backlog
   foreach sort employees[
     the-employee -> ask the-employee [
       if count out-assignment-neighbors with [status = "in-progress"] < assigned-tasks-employee [
@@ -608,6 +648,7 @@ to-report link-satisfied? [pred lag kind now]
 end
 
 to the-employee-moves-assignments-to-the-in-progress-queue
+  ;; newly assigned tasks start now: remember the tick for SS/SF links and the duration
   ask employees [
     ask out-assignment-neighbors with [status = "to-do"][
         set color yellow
@@ -653,6 +694,7 @@ end
 
 ;; forms a link between all employees
 to create-team
+  ;; fully connected team: only a visual link, it has no effect on the work
   ask employees
   [
     create-teammates-with other employees
@@ -693,6 +735,7 @@ end
 
 ;; Fills the area from the bottom row up, left to right, in the given order
 to place-cards [cards x-min x-max]
+  ;; patch (x, y) holds board-scale x board-scale cards; i is the card position counted from the bottom-left
   let columns (x-max - x-min + 1) * board-scale
   let i 0
   foreach cards [ the-task ->

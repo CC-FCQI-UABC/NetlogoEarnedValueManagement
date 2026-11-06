@@ -1,6 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <model version="NetLogo 7.0.4" snapToGrid="false">
-  <code><![CDATA[;;GLOBAL VARIABLES
+  <code><![CDATA[;; ============================================================================================
+;; Earned Value Management agent-based model (NetLogo Web version: generated from the desktop model, random tasks only)
+;;
+;; Overview
+;;  - Tasks (cards on a kanban board) are done by employees. 1 tick = 1 working hour.
+;;  - The project plan (baseline) is made of random tasks: each gets planned-hours, start-tick/finish-tick
+;;    and predecessor links.
+;;  - Each tick: free employees pick ready tasks (to-do -> in-progress), then every in-progress task
+;;    gets an hour of work, then finished tasks move to done (see go).
+;;  - the EVM code of EarnedValueManagement.nls is inlined at the end of this file: indicators (PV, EV, AC, SPI, CPI, EAC, ES, ...).
+;; Layout of this file: setup -> random plan -> employees -> execution (go) -> task board drawing
+;; -> EVM indicators.
+;; ============================================================================================
+
+;;GLOBAL VARIABLES
+;; backlog          list of the tasks still waiting for an employee, in creation order
+;; pmb-baseline     planned duration of the project in ticks (frozen at setup, see set-baseline)
+;; bac-total        Budget at Completion (sum of planned-hours), calculated once at setup
+;; cache-*          per-tick caches of EV, AC, PV and ES (see refresh-evm-cache)
+;; pv-event-*       baseline planned-value curve as sorted events (see build-pv-curve)
+;; board-scale      cards per patch side on the task board (grows when there are many tasks)
 globals [backlog pmb-baseline bac-total cache-tick cache-ev cache-ac cache-pv cache-es cache-es-tick pv-event-ticks pv-event-values pv-event-rates board-scale]
 
 ;;BREED DEFINITIONS
@@ -11,14 +31,14 @@ breed [tasks task]
 
 ;AGENT PROPERTIES DEF SECTION
 employees-own [
-  employee-number
+  employee-number     ;; sequential id, 1..employees-number
   status
   role
   motivation
 ]
 
 tasks-own [
-  status
+  status              ;; "to-do", "in-progress" or "done" (the card color follows: red, yellow, green)
   task-number
   task-description
   priority
@@ -49,6 +69,8 @@ to setup
 end
 
 to setup-tasks
+  ;; creates the tasks of the plan; afterwards every task has planned-hours, start-tick,
+  ;; finish-tick and predecessor-links, whatever its origin
   create-tasks number-of-tasks [
     set color red
     set shape "square"
@@ -72,6 +94,7 @@ to setup-tasks
   assign-random-predecessors
   schedule-random-plan
 
+  ;; each of the 3 columns holds 187 cards (11 x 17 patches) before the cards must shrink
   set board-scale max (list 1 ceiling sqrt (count tasks / 187))
   ask tasks [set size 1 / board-scale]
   set backlog sort tasks
@@ -145,6 +168,7 @@ to-report link-text [p]
 end
 
 to setup-employees
+  ;; employees are scattered below the board and all linked as a team (create-team)
   let next-number 1
   create-employees employees-number [
     setxy random-xcor (random 16) - 16
@@ -160,6 +184,7 @@ end
 
 ;;EXECUTION SECTION
 to go
+  ;; one tick = one working hour. Stops (button turns off) when everything is done or when no task can progress.
   if probability-of-delay >= 1 and probability-of-advance <= 0 [
     user-message "With probability-of-delay = 1 and probability-of-advance = 0 no task can ever progress."
     stop
@@ -172,6 +197,7 @@ end
 
 ;;PROCEDURES SECTION
 to processing-the-tasks
+  ;; the order matters: pick -> start -> work/finish. Gates (ready?, finish-allowed?) read the state of the previous step.
   the-employee-picks-tasks-from-the-to-do-backlog
   the-employee-moves-assignments-to-the-in-progress-queue
   the-employee-achieves-and-moves-tasks-to-the-done-cue
@@ -179,6 +205,7 @@ to processing-the-tasks
 end
 
 to the-employee-picks-tasks-from-the-to-do-backlog
+  ;; employees in who order (deterministic); each one with a free slot takes the first ready task of the backlog
   foreach sort employees[
     the-employee -> ask the-employee [
       if count out-assignment-neighbors with [status = "in-progress"] < assigned-tasks-employee [
@@ -232,6 +259,7 @@ to-report link-satisfied? [pred lag kind now]
 end
 
 to the-employee-moves-assignments-to-the-in-progress-queue
+  ;; newly assigned tasks start now: remember the tick for SS/SF links and the duration
   ask employees [
     ask out-assignment-neighbors with [status = "to-do"][
         set color yellow
@@ -277,6 +305,7 @@ end
 
 ;; forms a link between all employees
 to create-team
+  ;; fully connected team: only a visual link, it has no effect on the work
   ask employees
   [
     create-teammates-with other employees
@@ -298,6 +327,7 @@ end
 
 ;; Fills the area from the bottom row up, left to right, in the given order
 to place-cards [cards x-min x-max]
+  ;; patch (x, y) holds board-scale x board-scale cards; i is the card position counted from the bottom-left
   let columns (x-max - x-min + 1) * board-scale
   let i 0
   foreach cards [ the-task ->
@@ -412,6 +442,7 @@ to-report EV
   report cache-ev
 end
 
+;; ---- Ratios against the budget (0 to 1, used by the "Earned value" plot)
 to-report PV%
   ifelse BAC > 0 [report (PV / BAC)][report 1]
 end
@@ -424,14 +455,18 @@ to-report AC%
   ifelse BAC > 0 [report (AC / BAC)][report 1]
 end
 
+;; ---- Variances: positive is good (ahead of plan / under budget)
+;; Schedule Variance, in hours of work: EV - PV
 to-report SV
   report EV - PV
 end
 
+;; Cost Variance, in hours: EV - AC
 to-report CV
   report EV - AC
 end
 
+;; relative variances (0 while there is nothing to compare with)
 to-report SV%
   ifelse PV > 0 [report SV / PV][report 0]
 end
@@ -466,14 +501,17 @@ to-report EAC2
   ifelse CPI > 0 [report BAC / CPI][report "n/a"]
 end
 
+;; Estimate to Complete: hours still to spend (EAC1 - AC)
 to-report ETC
   report EAC1 - AC
 end
 
+;; Estimate to Complete under EAC2 (current cost performance continues)
 to-report ETC2
   ifelse is-number? EAC2 [report EAC2 - AC][report "n/a"]
 end
 
+;; Variance at Completion: budget minus estimate (BAC - EAC1)
 to-report VAC
   report BAC - EAC1
 end
@@ -482,6 +520,7 @@ to-report VAC%
   ifelse BAC > 0 [report VAC / BAC][report 0]
 end
 
+;; Cost performance needed/obtained at completion: BAC / EAC1
 to-report CPIAC
   ifelse EAC1 > 0 [report BAC / EAC1][report 1]
 end
@@ -497,6 +536,7 @@ to-report ES
   report cache-es
 end
 
+;; Earned Schedule (uncached): find the time at which the baseline PV equals the EV earned so far
 to-report compute-es
   if BAC <= 0 [report 0]
   let earned min (list EV BAC)
